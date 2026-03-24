@@ -1,0 +1,32 @@
+{
+  "name": "sirosid-tests",
+  "version": "1.0.0",
+  "description": "End-to-end test suites for SIROS ID wallet ecosystem",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:public": "playwright test specs/public/",
+    "test:admin": "playwright test specs/admin/",
+    "test:webauthn": "playwright test --config=playwright.webauthn-ci.config.ts specs/webauthn/",
+    "test:webauthn:browser": "playwright test --config=playwright.real-webauthn.config.ts specs/webauthn/",
+    "test:registry": "playwright test specs/public/registry.spec.ts",
+    "test:go-trust": "playwright test specs/public/go-trust.spec.ts",
+    "test:credential": "playwright test --config=playwright.webauthn-ci.config.ts specs/webauthn/credential-flow.spec.ts",
+    "test:tenant": "playwright test --config=playwright.webauthn-ci.config.ts specs/webauthn/tenant-selector.spec.ts",
+    "test:trust": "playwright test --config=playwright.webauthn-ci.config.ts specs/webauthn/trust-integration.spec.ts",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "jose": "^5.9.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.1.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
