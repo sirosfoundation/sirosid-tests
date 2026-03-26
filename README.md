@@ -19,6 +19,7 @@ This repository contains Playwright-based E2E tests that can run against any SIR
 | **Public** | `specs/public/` | No | Tests that use only public endpoints |
 | **Admin** | `specs/admin/` | Yes | Tests requiring admin API access |
 | **WebAuthn** | `specs/webauthn/` | Yes | Browser-based credential flow tests |
+| **VC Services** | `specs/vc/` | Yes | Production-like VC issuance/verification |
 
 ### Public Tests
 
@@ -43,6 +44,22 @@ Full browser-based tests with virtual authenticators:
 - `credential-flow.spec.ts` - Credential issuance and presentation
 - `tenant-selector.spec.ts` - Multi-tenant routing
 - `trust-integration.spec.ts` - Trust evaluation in credential flows
+
+### VC Services Tests (Production-like)
+
+Tests against the full VC stack (issuer, verifier, apigw, registry):
+
+- `openid4vci.spec.ts` - OpenID4VCI credential issuance flows
+- `openid4vp.spec.ts` - OpenID4VP credential verification flows
+- `trust-integration.spec.ts` - go-trust PDP modes (allow/whitelist/deny)
+- `e2e-flows.spec.ts` - Complete issue-then-verify flows
+
+**Prerequisites:** Start sirosid-dev with VC services:
+```bash
+cd ../sirosid-dev && make up-vc
+# Or with go-trust:
+cd ../sirosid-dev && make up-vc-go-trust-allow
+```
 
 ---
 
@@ -275,6 +292,16 @@ make test-webauthn    # Run WebAuthn browser tests
 make test-ci          # CI mode (headless, reporter)
 ```
 
+### VC Services Tests
+
+```bash
+make test-vc              # All VC services tests
+make test-vc-issuance     # OpenID4VCI issuance tests
+make test-vc-verification # OpenID4VP verification tests
+make test-vc-trust        # VC + go-trust integration
+make test-vc-e2e          # Full E2E credential flows
+```
+
 ### Specific Test Suites
 
 ```bash
@@ -289,6 +316,7 @@ make test-trust-integration  # Trust evaluation in flows
 
 ```bash
 make check-env        # Verify environment connectivity
+make check-vc-env     # Verify VC services connectivity
 make lint             # Run linter
 make clean            # Clean test artifacts
 ```
@@ -332,11 +360,19 @@ sirosid-tests/
 │   │   ├── credential-flow.spec.ts
 │   │   ├── tenant-selector.spec.ts
 │   │   └── trust-integration.spec.ts
+│   ├── vc/                        # Production-like VC services
+│   │   ├── openid4vci.spec.ts     # Credential issuance
+│   │   ├── openid4vp.spec.ts      # Credential verification
+│   │   ├── trust-integration.spec.ts  # go-trust modes
+│   │   └── e2e-flows.spec.ts      # Complete flows
 │   └── shared/                    # Shared test logic
 │       ├── credential-flow.shared.ts
 │       ├── user-flows.shared.ts
 │       └── ...
 ├── helpers/                       # Test utilities
+│   ├── vc-services.ts             # VC services API helper
+│   ├── shared-helpers.ts
+│   └── ...
 ├── playwright.config.ts           # Default config
 ├── playwright.webauthn-ci.config.ts
 ├── playwright.real-webauthn.config.ts

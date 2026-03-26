@@ -12,7 +12,8 @@
 #   make test-public
 
 .PHONY: help install test test-public test-admin test-webauthn \
-        test-ci test-soft-fido2 lint clean
+        test-ci test-soft-fido2 test-vc test-vc-issuance test-vc-verification \
+        test-vc-trust test-vc-e2e lint clean
 
 # =============================================================================
 # Configuration - Override via environment
@@ -27,11 +28,23 @@ ENGINE_URL ?= http://localhost:8082
 ADMIN_URL ?= http://localhost:8081
 ADMIN_TOKEN ?= e2e-test-admin-token-for-testing-purposes-only
 
-# Optional service URLs
+# Optional service URLs (mock services)
 MOCK_ISSUER_URL ?= http://localhost:9000
 MOCK_VERIFIER_URL ?= http://localhost:9001
 TRUST_PDP_URL ?= http://localhost:9091
 VCTM_REGISTRY_URL ?= http://localhost:8097
+
+# VC Services URLs (production-like stack)
+VC_ISSUER_URL ?= http://localhost:9000
+VC_VERIFIER_URL ?= http://localhost:9001
+VC_MOCKAS_URL ?= http://localhost:9002
+VC_APIGW_URL ?= http://localhost:9003
+VC_REGISTRY_URL ?= http://localhost:9004
+
+# go-trust URLs
+GO_TRUST_ALLOW_URL ?= http://localhost:9095
+GO_TRUST_WHITELIST_URL ?= http://localhost:9096
+GO_TRUST_DENY_URL ?= http://localhost:9097
 
 # Transport mode: auto | http | websocket
 TRANSPORT_MODE ?= auto
@@ -49,6 +62,14 @@ TEST_ENV := FRONTEND_URL=$(FRONTEND_URL) \
             TRUST_PDP_URL=$(TRUST_PDP_URL) \
             MOCK_PDP_URL=$(TRUST_PDP_URL) \
             VCTM_REGISTRY_URL=$(VCTM_REGISTRY_URL) \
+            VC_ISSUER_URL=$(VC_ISSUER_URL) \
+            VC_VERIFIER_URL=$(VC_VERIFIER_URL) \
+            VC_MOCKAS_URL=$(VC_MOCKAS_URL) \
+            VC_APIGW_URL=$(VC_APIGW_URL) \
+            VC_REGISTRY_URL=$(VC_REGISTRY_URL) \
+            GO_TRUST_ALLOW_URL=$(GO_TRUST_ALLOW_URL) \
+            GO_TRUST_WHITELIST_URL=$(GO_TRUST_WHITELIST_URL) \
+            GO_TRUST_DENY_URL=$(GO_TRUST_DENY_URL) \
             TRANSPORT_MODE=$(TRANSPORT_MODE)
 
 # Colors for output
@@ -64,17 +85,26 @@ NC := \033[0m
 help: ## Show this help
 	@echo "$(GREEN)sirosid-tests$(NC) - E2E Test Suites"
 	@echo ""
-	@echo "$(GREEN)Test Targets:$(NC)"
+	@echo "$(GREEN)Test Targets (Mock Services):$(NC)"
 	@echo "  make test          # Run all tests (requires admin access)"
 	@echo "  make test-public   # Public tests only (no admin required)"
 	@echo "  make test-admin    # Admin tests only"
 	@echo "  make test-webauthn # WebAuthn browser tests"
 	@echo "  make test-ci       # CI mode (headless, reporter)"
 	@echo ""
+	@echo "$(GREEN)VC Services Tests (Production-like):$(NC)"
+	@echo "  make test-vc              # All VC tests"
+	@echo "  make test-vc-issuance     # OpenID4VCI issuance"
+	@echo "  make test-vc-verification # OpenID4VP verification"
+	@echo "  make test-vc-trust        # VC + go-trust integration"
+	@echo "  make test-vc-e2e          # Full E2E flows"
+	@echo ""
 	@echo "$(GREEN)Environment Configuration:$(NC)"
 	@echo "  FRONTEND_URL = $(FRONTEND_URL)"
 	@echo "  BACKEND_URL  = $(BACKEND_URL)"
 	@echo "  ADMIN_URL    = $(ADMIN_URL)"
+	@echo "  VC_ISSUER_URL = $(VC_ISSUER_URL)"
+	@echo "  VC_VERIFIER_URL = $(VC_VERIFIER_URL)"
 	@echo ""
 	@echo "$(GREEN)Usage Examples:$(NC)"
 	@echo "  # Against sirosid-dev (default)"
@@ -144,6 +174,60 @@ test-tenant: install ## Run tenant selector tests
 
 test-trust-integration: install ## Run trust integration tests
 	$(TEST_ENV) npx playwright test specs/webauthn/trust-integration.spec.ts --config=playwright.webauthn-ci.config.ts
+
+# =============================================================================
+# VC Services Tests (Production-like Stack)
+# =============================================================================
+
+test-vc: install ## Run all VC services tests
+	@echo "$(GREEN)Running VC services tests...$(NC)"
+	@echo "  VC Issuer: $(VC_ISSUER_URL)"
+	@echo "  VC Verifier: $(VC_VERIFIER_URL)"
+	@echo "  VC API GW: $(VC_APIGW_URL)"
+	$(TEST_ENV) npx playwright test specs/vc/
+
+test-vc-issuance: install ## Run OpenID4VCI credential issuance tests
+	@echo "$(GREEN)Running VC issuance tests...$(NC)"
+	$(TEST_ENV) npx playwright test specs/vc/openid4vci.spec.ts
+
+test-vc-verification: install ## Run OpenID4VP credential verification tests
+	@echo "$(GREEN)Running VC verification tests...$(NC)"
+	$(TEST_ENV) npx playwright test specs/vc/openid4vp.spec.ts
+
+test-vc-trust: install ## Run VC + go-trust integration tests
+	@echo "$(GREEN)Running VC trust integration tests...$(NC)"
+	@echo "  go-trust-allow: $(GO_TRUST_ALLOW_URL)"
+	@echo "  go-trust-whitelist: $(GO_TRUST_WHITELIST_URL)"
+	@echo "  go-trust-deny: $(GO_TRUST_DENY_URL)"
+	$(TEST_ENV) npx playwright test specs/vc/trust-integration.spec.ts
+
+test-vc-e2e: install ## Run full E2E credential flows
+	@echo "$(GREEN)Running E2E credential flow tests...$(NC)"
+	$(TEST_ENV) npx playwright test specs/vc/e2e-flows.spec.ts
+
+check-vc-env: ## Verify VC services connectivity
+	@echo "$(GREEN)Checking VC services...$(NC)"
+	@curl -sf $(VC_ISSUER_URL)/.well-known/openid-credential-issuer >/dev/null && \
+		echo "  $(GREEN)✓$(NC) VC Issuer: $(VC_ISSUER_URL)" || \
+		echo "  $(RED)✗$(NC) VC Issuer: $(VC_ISSUER_URL)"
+	@curl -sf $(VC_VERIFIER_URL)/.well-known/openid-configuration >/dev/null && \
+		echo "  $(GREEN)✓$(NC) VC Verifier: $(VC_VERIFIER_URL)" || \
+		echo "  $(RED)✗$(NC) VC Verifier: $(VC_VERIFIER_URL)"
+	@curl -sf $(VC_APIGW_URL)/.well-known/oauth-authorization-server >/dev/null && \
+		echo "  $(GREEN)✓$(NC) VC API GW: $(VC_APIGW_URL)" || \
+		echo "  $(RED)✗$(NC) VC API GW: $(VC_APIGW_URL)"
+	@curl -sf $(VC_REGISTRY_URL)/health >/dev/null && \
+		echo "  $(GREEN)✓$(NC) VC Registry: $(VC_REGISTRY_URL)" || \
+		echo "  $(RED)✗$(NC) VC Registry: $(VC_REGISTRY_URL)"
+	@curl -sf $(GO_TRUST_ALLOW_URL)/health >/dev/null 2>&1 && \
+		echo "  $(GREEN)✓$(NC) go-trust-allow: $(GO_TRUST_ALLOW_URL)" || \
+		echo "  $(YELLOW)○$(NC) go-trust-allow: not running"
+	@curl -sf $(GO_TRUST_WHITELIST_URL)/health >/dev/null 2>&1 && \
+		echo "  $(GREEN)✓$(NC) go-trust-whitelist: $(GO_TRUST_WHITELIST_URL)" || \
+		echo "  $(YELLOW)○$(NC) go-trust-whitelist: not running"
+	@curl -sf $(GO_TRUST_DENY_URL)/health >/dev/null 2>&1 && \
+		echo "  $(GREEN)✓$(NC) go-trust-deny: $(GO_TRUST_DENY_URL)" || \
+		echo "  $(YELLOW)○$(NC) go-trust-deny: not running"
 
 # =============================================================================
 # Soft-FIDO2 Mode (requires display)
