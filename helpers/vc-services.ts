@@ -66,11 +66,11 @@ export async function checkVCServicesHealth(): Promise<{
   };
 
   const checks = [
-    { name: 'issuer' as const, url: `${VC_ENV.VC_ISSUER_URL}/.well-known/openid-credential-issuer` },
-    { name: 'verifier' as const, url: `${VC_ENV.VC_VERIFIER_URL}/.well-known/openid-configuration` },
+    { name: 'issuer' as const, url: `${VC_ENV.VC_ISSUER_URL}/health` },
+    { name: 'verifier' as const, url: `${VC_ENV.VC_VERIFIER_URL}/health` },
     { name: 'apigw' as const, url: `${VC_ENV.VC_APIGW_URL}/.well-known/oauth-authorization-server` },
     { name: 'registry' as const, url: `${VC_ENV.VC_REGISTRY_URL}/health` },
-    { name: 'mockas' as const, url: `${VC_ENV.VC_MOCKAS_URL}/` },
+    { name: 'mockas' as const, url: `${VC_ENV.VC_MOCKAS_URL}/health` },
   ];
 
   const apiContext = await request.newContext();
@@ -119,9 +119,11 @@ export interface CredentialOffer {
 }
 
 export interface CreatedOffer {
-  credential_offer: string;
+  credential_offer: any;
   credential_offer_uri: string;
-  grants: {
+  pre_authorized_code?: string;
+  expires_in?: number;
+  grants?: {
     'urn:ietf:params:oauth:grant-type:pre-authorized_code'?: {
       'pre-authorized_code': string;
       tx_code?: {
@@ -129,45 +131,96 @@ export interface CreatedOffer {
         length: number;
       };
     };
+    'authorization_code'?: Record<string, any>;
   };
 }
 
 /**
- * Create a pre-authorized credential offer via the API Gateway
+ * Map credential type VCT to API scope
+ */
+function credentialTypeToScope(credentialType: CredentialType): string {
+  switch (credentialType) {
+    case CREDENTIAL_TYPES.PID_1_8:
+      return 'pid_1_8';
+    case CREDENTIAL_TYPES.PID_1_5:
+      return 'pid_1_5';
+    case CREDENTIAL_TYPES.EHIC:
+      return 'ehic';
+    case CREDENTIAL_TYPES.DIPLOMA:
+      return 'diploma';
+    case CREDENTIAL_TYPES.EDUID:
+      return 'eduid';
+    default:
+      // For unknown types, try to extract scope from VCT
+      const parts = credentialType.split(':');
+      return parts[parts.length - 2] || credentialType;
+  }
+}
+
+/**
+ * Create a credential offer via the API Gateway
+ * 
+ * This uses the GET /offers/:scope/:wallet_id endpoint which returns
+ * a QR code and credential offer URL.
  */
 export async function createCredentialOffer(
   credentialType: CredentialType,
-  userIdentifier: string,
+  _userIdentifier: string,  // Not used in current API
   options: {
     walletId?: string;
-    claims?: Record<string, unknown>;
+    claims?: Record<string, unknown>;  // Not used in current API
   } = {}
 ): Promise<CreatedOffer> {
   const apiContext = await request.newContext();
+  const scope = credentialTypeToScope(credentialType);
+  const walletId = options.walletId || 'local';
   
   try {
-    // Call the apigw offer endpoint
-    const response = await apiContext.post(`${VC_ENV.VC_APIGW_URL}/offer`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      data: {
-        credential_configuration_id: credentialType,
-        user_identifier: userIdentifier,
-        wallet_id: options.walletId || 'local',
-        claims: options.claims || getDefaultClaimsForType(credentialType),
-      },
-    });
+    // Call the apigw offers endpoint to create a credential offer
+    const response = await apiContext.get(
+      `${VC_ENV.VC_APIGW_URL}/offers/${scope}/${walletId}`,
+      { timeout: 10000 }
+    );
 
     if (!response.ok()) {
       const error = await response.text();
       throw new Error(`Failed to create credential offer: ${response.status()} - ${error}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    
+    // Parse the credential offer from the QR URI
+    const offerUri = result.qr?.uri || '';
+    const parsedOffer = parseCredentialOfferFromUri(offerUri);
+    
+    // Transform the response to match CreatedOffer interface
+    return {
+      credential_offer_uri: offerUri,
+      credential_offer: parsedOffer,
+      pre_authorized_code: parsedOffer?.grants?.['urn:ietf:params:oauth:grant-type:pre-authorized_code']?.['pre-authorized_code'],
+      grants: parsedOffer?.grants,
+      expires_in: 300,
+    };
   } finally {
     await apiContext.dispose();
   }
+}
+
+/**
+ * Parse credential offer from URI query parameter
+ */
+function parseCredentialOfferFromUri(uri: string): any {
+  if (!uri) return undefined;
+  try {
+    const url = new URL(uri);
+    const credentialOffer = url.searchParams.get('credential_offer');
+    if (credentialOffer) {
+      return JSON.parse(decodeURIComponent(credentialOffer));
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return undefined;
 }
 
 /**

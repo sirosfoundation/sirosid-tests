@@ -86,8 +86,9 @@ test.describe('OpenID4VCI Credential Issuance', () => {
     });
 
     test('issuer metadata should be accessible', async ({ request }) => {
+      // Note: .well-known/openid-credential-issuer is served by apigw, not issuer directly
       const response = await request.get(
-        `${VC_ENV.VC_ISSUER_URL}/.well-known/openid-credential-issuer`
+        `${VC_ENV.VC_APIGW_URL}/.well-known/openid-credential-issuer`
       );
       
       expect(response.ok()).toBe(true);
