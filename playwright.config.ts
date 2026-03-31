@@ -89,11 +89,34 @@ export default defineConfig({
   },
 
   projects: [
+    // Default project uses TRANSPORT_MODE env var
     {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
       },
+    },
+    // Transport-specific projects for matrix testing
+    {
+      name: 'chromium-http',
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+      metadata: { transportMode: 'http' },
+    },
+    {
+      name: 'chromium-websocket',
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+      metadata: { transportMode: 'websocket' },
+    },
+    {
+      name: 'chromium-auto',
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+      metadata: { transportMode: 'auto' },
     },
   ],
 

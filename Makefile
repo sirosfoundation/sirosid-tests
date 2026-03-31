@@ -13,7 +13,8 @@
 
 .PHONY: help install test test-public test-admin test-webauthn \
         test-ci test-soft-fido2 test-vc test-vc-issuance test-vc-verification \
-        test-vc-trust test-vc-e2e lint clean
+        test-vc-trust test-vc-e2e test-http test-websocket test-all-transports \
+        lint clean
 
 # =============================================================================
 # Configuration - Override via environment
@@ -86,11 +87,16 @@ help: ## Show this help
 	@echo "$(GREEN)sirosid-tests$(NC) - E2E Test Suites"
 	@echo ""
 	@echo "$(GREEN)Test Targets (Mock Services):$(NC)"
-	@echo "  make test          # Run all tests (requires admin access)"
-	@echo "  make test-public   # Public tests only (no admin required)"
-	@echo "  make test-admin    # Admin tests only"
-	@echo "  make test-webauthn # WebAuthn browser tests"
-	@echo "  make test-ci       # CI mode (headless, reporter)"
+	@echo "  make test              # Run all tests (requires admin access)"
+	@echo "  make test-public       # Public tests only (no admin required)"
+	@echo "  make test-admin        # Admin tests only"
+	@echo "  make test-webauthn     # WebAuthn browser tests"
+	@echo "  make test-ci           # CI mode (headless, reporter)"
+	@echo ""
+	@echo "$(GREEN)Transport-Specific Tests:$(NC)"
+	@echo "  make test-http         # Tests with HTTP transport only"
+	@echo "  make test-websocket    # Tests with WebSocket transport only"
+	@echo "  make test-all-transports  # Run tests with all transports"
 	@echo ""
 	@echo "$(GREEN)VC Services Tests (Production-like):$(NC)"
 	@echo "  make test-vc              # All VC tests"
@@ -155,6 +161,32 @@ test-webauthn: install ## Run WebAuthn browser tests
 test-ci: install ## CI mode with reporter
 	@echo "$(GREEN)Running tests in CI mode...$(NC)"
 	$(TEST_ENV) npx playwright test --reporter=github
+
+# =============================================================================
+# Transport-Specific Tests
+# =============================================================================
+
+test-http: install ## Run tests with HTTP transport only
+	@echo "$(GREEN)Running tests with HTTP transport...$(NC)"
+	@echo "  Target: $(FRONTEND_URL)"
+	$(TEST_ENV) TRANSPORT_MODE=http npx playwright test --project=chromium-http
+
+test-websocket: install ## Run tests with WebSocket transport only
+	@echo "$(GREEN)Running tests with WebSocket transport...$(NC)"
+	@echo "  Target: $(FRONTEND_URL)"
+	@echo "  Engine: $(ENGINE_URL)"
+	$(TEST_ENV) TRANSPORT_MODE=websocket npx playwright test --project=chromium-websocket
+
+test-all-transports: install ## Run tests with all supported transports
+	@echo "$(GREEN)Running tests with ALL transports...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)=== HTTP Transport ===$(NC)"
+	$(TEST_ENV) TRANSPORT_MODE=http npx playwright test --project=chromium-http || true
+	@echo ""
+	@echo "$(YELLOW)=== WebSocket Transport ===$(NC)"
+	$(TEST_ENV) TRANSPORT_MODE=websocket npx playwright test --project=chromium-websocket || true
+	@echo ""
+	@echo "$(GREEN)All transport tests complete.$(NC)"
 
 # =============================================================================
 # Specific Test Files
