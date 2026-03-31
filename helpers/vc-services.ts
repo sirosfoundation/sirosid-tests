@@ -455,7 +455,11 @@ export async function checkTrustPdpHealth(mode: TrustMode): Promise<boolean> {
   const apiContext = await request.newContext();
   
   try {
-    const response = await apiContext.get(`${url}/health`, { timeout: 5000 });
+    // Try /healthz first (go-trust), then /health as fallback
+    let response = await apiContext.get(`${url}/healthz`, { timeout: 5000 });
+    if (!response.ok()) {
+      response = await apiContext.get(`${url}/health`, { timeout: 5000 });
+    }
     return response.ok();
   } catch {
     return false;
@@ -466,6 +470,10 @@ export async function checkTrustPdpHealth(mode: TrustMode): Promise<boolean> {
 
 /**
  * Evaluate trust via PDP
+ * @param mode - Trust mode (allow, whitelist, deny)
+ * @param subject - The entity URL (issuer or verifier)
+ * @param action - 'issue' for issuer trust, 'verify' for verifier trust
+ * @param resource - Credential type (for context, not used by go-trust)
  */
 export async function evaluateTrust(
   mode: TrustMode,
@@ -476,17 +484,36 @@ export async function evaluateTrust(
   const url = getTrustPdpUrl(mode);
   const apiContext = await request.newContext();
   
+  // Determine resource type based on action
+  const resourceType = action === 'issue' ? 'issuer' : 'verifier';
+  
   try {
-    const response = await apiContext.post(`${url}/access/v1/evaluation`, {
+    // go-trust format: subject.type='key', resource.type='issuer'/'verifier'
+    // The subject.id and resource.id should match (the entity URL)
+    let response = await apiContext.post(`${url}/evaluation`, {
       headers: {
         'Content-Type': 'application/json',
       },
       data: {
-        subject: { type: 'issuer', id: subject },
+        subject: { type: 'key', id: subject },
         action: { name: action },
-        resource: { type: 'credential', id: resource },
+        resource: { type: resourceType, id: subject },
       },
     });
+
+    if (!response.ok() && response.status() === 404) {
+      // Fallback to AuthZEN standard path with original format
+      response = await apiContext.post(`${url}/access/v1/evaluation`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        data: {
+          subject: { type: resourceType, id: subject },
+          action: { name: action },
+          resource: { type: 'credential', id: resource },
+        },
+      });
+    }
 
     if (!response.ok()) {
       return { decision: false, reason: `PDP error: ${response.status()}` };
