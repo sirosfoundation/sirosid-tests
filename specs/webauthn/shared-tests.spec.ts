@@ -48,6 +48,12 @@ import {
   defineCredentialIssuanceTests,
   defineCredentialIdStabilityTests,
 } from '../shared/credential-flow.shared';
+import {
+  defineAllTransportTests,
+} from '../shared/transport-modes.shared';
+import {
+  defineAllProtocolStepTests,
+} from '../shared/protocol-steps.shared';
 
 // =============================================================================
 // CDP Test Fixture
@@ -116,4 +122,10 @@ cdpTest.describe('CDP WebAuthn Tests', () => {
   defineCredentialFlowHealthTests(cdpTest, () => CDP_ADAPTER_INFO);
   defineCredentialIssuanceTests(cdpTest, () => CDP_ADAPTER_INFO);
   defineCredentialIdStabilityTests(cdpTest, () => CDP_ADAPTER_INFO);
+
+  // Transport Mode Tests
+  defineAllTransportTests(cdpTest, () => CDP_ADAPTER_INFO);
+
+  // Protocol Step Tracking Tests
+  defineAllProtocolStepTests(cdpTest, () => CDP_ADAPTER_INFO);
 });

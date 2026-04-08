@@ -470,6 +470,18 @@ When testing remote wallet with local mock issuer/verifier, the wallet backend n
 
 ---
 
+## Comprehensive Test Plan
+
+For detailed test coverage information including:
+- Transport mode tests (WebSocket, HTTP proxy)
+- AuthZEN trust evaluation tests
+- Protocol step tracking tests
+- i18n verification tests
+
+See [COMPREHENSIVE_TEST_PLAN.md](./COMPREHENSIVE_TEST_PLAN.md).
+
+---
+
 ## See Also
 
 - [sirosid-dev](https://github.com/sirosfoundation/sirosid-dev) - Local development environment

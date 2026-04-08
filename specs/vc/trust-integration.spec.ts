@@ -26,6 +26,9 @@ import {
   getTrustPdpUrl,
   createCredentialOffer,
   TrustMode,
+  EXPECTED_SERVICES,
+  requireVCServices,
+  requireTrustMode,
 } from '../../helpers/vc-services';
 import { ENV, generateTestId, createTenant, deleteTenant } from '../../helpers/shared-helpers';
 
@@ -67,8 +70,9 @@ test.describe('Trust PDP Health', () => {
     test('should be healthy when running', async () => {
       const healthy = await checkTrustPdpHealth('allow');
       
-      if (!healthy) {
+      if (!requireTrustMode(healthy, 'allow')) {
         test.skip(true, 'go-trust-allow not running (start with: make up-vc-go-trust-allow)');
+        return;
       }
       
       expect(healthy).toBe(true);
@@ -76,7 +80,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should expose health endpoint', async ({ request }) => {
       const healthy = await checkTrustPdpHealth('allow');
-      test.skip(!healthy, 'go-trust-allow not running');
+      if (!requireTrustMode(healthy, 'allow')) {
+        test.skip(true, 'go-trust-allow not running');
+        return;
+      }
 
       // go-trust uses /healthz instead of /health
       const response = await request.get(`${VC_ENV.GO_TRUST_ALLOW_URL}/healthz`);
@@ -85,7 +92,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should trust any issuer', async () => {
       const healthy = await checkTrustPdpHealth('allow');
-      test.skip(!healthy, 'go-trust-allow not running');
+      if (!requireTrustMode(healthy, 'allow')) {
+        test.skip(true, 'go-trust-allow not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'allow',
@@ -99,7 +109,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should trust any verifier', async () => {
       const healthy = await checkTrustPdpHealth('allow');
-      test.skip(!healthy, 'go-trust-allow not running');
+      if (!requireTrustMode(healthy, 'allow')) {
+        test.skip(true, 'go-trust-allow not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'allow',
@@ -116,8 +129,9 @@ test.describe('Trust PDP Health', () => {
     test('should be healthy when running', async () => {
       const healthy = await checkTrustPdpHealth('whitelist');
       
-      if (!healthy) {
+      if (!requireTrustMode(healthy, 'whitelist')) {
         test.skip(true, 'go-trust-whitelist not running (start with: make up-vc-go-trust-whitelist)');
+        return;
       }
       
       expect(healthy).toBe(true);
@@ -125,7 +139,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should trust whitelisted issuers', async () => {
       const healthy = await checkTrustPdpHealth('whitelist');
-      test.skip(!healthy, 'go-trust-whitelist not running');
+      if (!requireTrustMode(healthy, 'whitelist')) {
+        test.skip(true, 'go-trust-whitelist not running');
+        return;
+      }
 
       // Use docker network hostname - go-trust runs in container and can't reach localhost
       const result = await evaluateTrust(
@@ -140,7 +157,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should trust whitelisted verifiers', async () => {
       const healthy = await checkTrustPdpHealth('whitelist');
-      test.skip(!healthy, 'go-trust-whitelist not running');
+      if (!requireTrustMode(healthy, 'whitelist')) {
+        test.skip(true, 'go-trust-whitelist not running');
+        return;
+      }
 
       // Use docker network hostname - go-trust runs in container and can't reach localhost
       const result = await evaluateTrust(
@@ -155,7 +175,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should reject non-whitelisted issuers', async () => {
       const healthy = await checkTrustPdpHealth('whitelist');
-      test.skip(!healthy, 'go-trust-whitelist not running');
+      if (!requireTrustMode(healthy, 'whitelist')) {
+        test.skip(true, 'go-trust-whitelist not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'whitelist',
@@ -169,7 +192,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should reject non-whitelisted verifiers', async () => {
       const healthy = await checkTrustPdpHealth('whitelist');
-      test.skip(!healthy, 'go-trust-whitelist not running');
+      if (!requireTrustMode(healthy, 'whitelist')) {
+        test.skip(true, 'go-trust-whitelist not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'whitelist',
@@ -186,8 +212,9 @@ test.describe('Trust PDP Health', () => {
     test('should be healthy when running', async () => {
       const healthy = await checkTrustPdpHealth('deny');
       
-      if (!healthy) {
+      if (!requireTrustMode(healthy, 'deny')) {
         test.skip(true, 'go-trust-deny not running (start with: make up-vc-go-trust-deny)');
+        return;
       }
       
       expect(healthy).toBe(true);
@@ -195,7 +222,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should reject all issuers', async () => {
       const healthy = await checkTrustPdpHealth('deny');
-      test.skip(!healthy, 'go-trust-deny not running');
+      if (!requireTrustMode(healthy, 'deny')) {
+        test.skip(true, 'go-trust-deny not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'deny',
@@ -209,7 +239,10 @@ test.describe('Trust PDP Health', () => {
 
     test('should reject all verifiers', async () => {
       const healthy = await checkTrustPdpHealth('deny');
-      test.skip(!healthy, 'go-trust-deny not running');
+      if (!requireTrustMode(healthy, 'deny')) {
+        test.skip(true, 'go-trust-deny not running');
+        return;
+      }
 
       const result = await evaluateTrust(
         'deny',
@@ -239,7 +272,10 @@ test.describe('Trust-Based Credential Issuance', () => {
   });
 
   test.beforeEach(async () => {
-    test.skip(!vcServicesAvailable, 'VC services not available');
+    if (!requireVCServices(vcServicesAvailable)) {
+      test.skip(true, 'VC services not available');
+      return;
+    }
     tenantId = generateTestId('trust-vc');
     await createTenant(tenantId, `Trust VC Test ${tenantId}`);
   });
@@ -265,8 +301,8 @@ test.describe('Trust-Based Credential Issuance', () => {
     expect(offer.credential_offer_uri).toBeDefined();
     
     // The offer should be created successfully because trust allows
-    const preAuthGrant = offer.grants['urn:ietf:params:oauth:grant-type:pre-authorized_code'];
-    expect(preAuthGrant).toBeDefined();
+    // Services use authorization_code flow, not pre-authorized_code
+    expect(offer.grants?.['authorization_code']).toBeDefined();
   });
 
   test('should evaluate issuer trust before credential creation', async () => {
@@ -303,7 +339,10 @@ test.describe('Trust-Based Credential Verification', () => {
   });
 
   test.beforeEach(async () => {
-    test.skip(!vcServicesAvailable, 'VC verifier not available');
+    if (!requireVCServices(vcServicesAvailable)) {
+      test.skip(true, 'VC verifier not available');
+      return;
+    }
   });
 
   test('should evaluate verifier trust', async () => {

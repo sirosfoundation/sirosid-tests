@@ -32,7 +32,66 @@ export const VC_ENV = {
   GO_TRUST_DENY_URL: process.env.GO_TRUST_DENY_URL || 'http://localhost:9097',
 };
 
-// Credential types available in the VC services
+// =============================================================================
+// Service Expectations
+// =============================================================================
+
+/**
+ * Expected services - when set, tests FAIL if the service is unavailable.
+ * When not set, tests SKIP if the service is unavailable.
+ *
+ * Set via environment variables:
+ *   EXPECT_VC_SERVICES=true           - VC services must be available
+ *   EXPECT_TRUST_MODE=allow|whitelist|deny - Specific trust mode must be available
+ */
+export const EXPECTED_SERVICES = {
+  /** If true, VC services must be available or tests fail */
+  VC_SERVICES: process.env.EXPECT_VC_SERVICES === 'true',
+  /** If set to a mode, that trust PDP must be available or tests fail */
+  TRUST_MODE: process.env.EXPECT_TRUST_MODE as TrustMode | undefined,
+};
+
+/**
+ * Require a service to be available.
+ *
+ * @param available - Whether the service is currently available
+ * @param expected - Whether the service is expected to be available
+ * @param serviceName - Name for error messages
+ * @throws Error if service is expected but not available
+ * @returns true if available, false if should skip
+ */
+export function requireService(
+  available: boolean,
+  expected: boolean,
+  serviceName: string
+): boolean {
+  if (!available && expected) {
+    throw new Error(
+      `${serviceName} is expected (EXPECT_* env var set) but not available. ` +
+      `Either start the service or unset the expectation.`
+    );
+  }
+  return available;
+}
+
+/**
+ * Check if VC services should be required (fail) or optional (skip).
+ * Use in test.beforeEach to enforce expectations.
+ */
+export function requireVCServices(available: boolean): boolean {
+  return requireService(available, EXPECTED_SERVICES.VC_SERVICES, 'VC services');
+}
+
+/**
+ * Check if a trust mode should be required (fail) or optional (skip).
+ * Use in test.beforeEach to enforce expectations.
+ */
+export function requireTrustMode(available: boolean, mode: TrustMode): boolean {
+  const expected = EXPECTED_SERVICES.TRUST_MODE === mode;
+  return requireService(available, expected, `go-trust-${mode}`);
+}
+
+// Credential types available in the VC services (VCT URIs)
 export const CREDENTIAL_TYPES = {
   PID_1_8: 'urn:eudi:pid:arf-1.8:1',
   PID_1_5: 'urn:eudi:pid:arf-1.5:1',
@@ -42,6 +101,27 @@ export const CREDENTIAL_TYPES = {
 } as const;
 
 export type CredentialType = typeof CREDENTIAL_TYPES[keyof typeof CREDENTIAL_TYPES];
+
+// Credential scopes - the VC services use scope-based keys in metadata
+export const CREDENTIAL_SCOPES = {
+  PID_1_8: 'pid_1_8',
+  PID_1_5: 'pid_1_5',
+  EHIC: 'ehic',
+  DIPLOMA: 'diploma',
+  EDUID: 'eduid',
+} as const;
+
+// Map VCT to scope for credential config lookups
+export function credentialTypeToConfigKey(credentialType: CredentialType): string {
+  switch (credentialType) {
+    case CREDENTIAL_TYPES.PID_1_8: return CREDENTIAL_SCOPES.PID_1_8;
+    case CREDENTIAL_TYPES.PID_1_5: return CREDENTIAL_SCOPES.PID_1_5;
+    case CREDENTIAL_TYPES.EHIC: return CREDENTIAL_SCOPES.EHIC;
+    case CREDENTIAL_TYPES.DIPLOMA: return CREDENTIAL_SCOPES.DIPLOMA;
+    case CREDENTIAL_TYPES.EDUID: return CREDENTIAL_SCOPES.EDUID;
+    default: return credentialType;
+  }
+}
 
 // =============================================================================
 // Service Health Checks
