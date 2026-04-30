@@ -237,6 +237,36 @@ test-vc-e2e: install ## Run full E2E credential flows
 	@echo "$(GREEN)Running E2E credential flow tests...$(NC)"
 	$(TEST_ENV) npx playwright test specs/vc/e2e-flows.spec.ts
 
+# =============================================================================
+# OpenID Conformance Suite Tests
+# =============================================================================
+
+CONFORMANCE_URL ?= https://localhost.emobix.co.uk:8443/
+
+test-conformance: install ## Run all conformance suite tests (VP + VCI)
+	@echo "$(GREEN)Running OpenID Conformance Suite tests...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/
+
+test-conformance-vp: install ## Run OID4VP wallet conformance tests
+	@echo "$(GREEN)Running OID4VP conformance tests...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/oid4vp-wallet.spec.ts
+
+test-conformance-vci: install ## Run OID4VCI wallet conformance tests
+	@echo "$(GREEN)Running OID4VCI conformance tests...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/oid4vci-wallet.spec.ts
+
+check-conformance-env: ## Check conformance suite connectivity
+	@echo "$(GREEN)Checking conformance suite...$(NC)"
+	@curl -fsk $(CONFORMANCE_URL)api/runner/available >/dev/null 2>&1 && \
+		echo "  $(GREEN)✓$(NC) Conformance suite: $(CONFORMANCE_URL)" || \
+		echo "  $(RED)✗$(NC) Conformance suite: $(CONFORMANCE_URL) (start with: cd sirosid-dev && make up-conformance)"
+
 check-vc-env: ## Verify VC services connectivity
 	@echo "$(GREEN)Checking VC services...$(NC)"
 	@curl -sf $(VC_ISSUER_URL)/.well-known/openid-credential-issuer >/dev/null && \

@@ -20,6 +20,7 @@ This repository contains Playwright-based E2E tests that can run against any SIR
 | **Admin** | `specs/admin/` | Yes | Tests requiring admin API access |
 | **WebAuthn** | `specs/webauthn/` | Yes | Browser-based credential flow tests |
 | **VC Services** | `specs/vc/` | Yes | Production-like VC issuance/verification |
+| **Conformance** | `specs/conformance/` | Yes | OpenID Foundation Conformance Suite wallet tests |
 
 ### Public Tests
 
@@ -59,6 +60,43 @@ Tests against the full VC stack (issuer, verifier, apigw, registry):
 cd ../sirosid-dev && make up-vc
 # Or with go-trust:
 cd ../sirosid-dev && make up-vc-go-trust-allow
+```
+
+### Conformance Suite Tests (OpenID Foundation)
+
+Tests the wallet against the official OpenID Foundation Conformance Suite:
+
+- `oid4vp-wallet.spec.ts` - OID4VP wallet conformance (verifiable presentation)
+- `oid4vci-wallet.spec.ts` - OID4VCI wallet conformance (credential issuance)
+
+The conformance suite acts as a verifier (VP) or issuer (VCI) and validates that
+the wallet correctly implements the OpenID4VP and OpenID4VCI specifications.
+
+The VP test automatically pre-loads a PID credential from the mock issuer before
+running the conformance modules.
+
+**Prerequisites:** Start the full conformance environment:
+```bash
+cd ../sirosid-dev && make up-conformance
+```
+
+This starts the wallet stack with go-trust allow-all, VC services, and the
+OpenID Conformance Suite (with MongoDB). It also ensures the required
+`/etc/hosts` entry for `localhost.emobix.co.uk` exists.
+
+**Run:**
+```bash
+# All conformance tests
+make test-conformance
+
+# VP only
+make test-conformance-vp
+
+# VCI only
+make test-conformance-vci
+
+# Check connectivity
+make check-conformance-env
 ```
 
 ---
@@ -271,6 +309,13 @@ make test-credential
 | `TRUST_PDP_URL` | Trust tests | `http://localhost:9091` | Trust PDP URL |
 | `VCTM_REGISTRY_URL` | Registry tests | `http://localhost:8097` | VCTM registry URL |
 
+### Conformance Suite
+
+| Variable | When Needed | Default | Description |
+|----------|-------------|---------|-------------|
+| `CONFORMANCE_URL` | Conformance tests | `https://localhost.emobix.co.uk:8443/` | Conformance suite base URL |
+| `CONFORMANCE_TOKEN` | If devmode off | (empty) | API auth token |
+
 ### Test Configuration
 
 | Variable | Values | Default | Description |
@@ -300,6 +345,15 @@ make test-vc-issuance     # OpenID4VCI issuance tests
 make test-vc-verification # OpenID4VP verification tests
 make test-vc-trust        # VC + go-trust integration
 make test-vc-e2e          # Full E2E credential flows
+```
+
+### Conformance Suite Tests
+
+```bash
+make test-conformance       # All conformance tests (VP + VCI)
+make test-conformance-vp    # OID4VP wallet conformance
+make test-conformance-vci   # OID4VCI wallet conformance
+make check-conformance-env  # Check conformance suite connectivity
 ```
 
 ### Specific Test Suites
@@ -365,11 +419,20 @@ sirosid-tests/
 │   │   ├── openid4vp.spec.ts      # Credential verification
 │   │   ├── trust-integration.spec.ts  # go-trust modes
 │   │   └── e2e-flows.spec.ts      # Complete flows
+│   ├── conformance/               # OpenID Conformance Suite
+│   │   ├── oid4vp-wallet.spec.ts  # VP wallet conformance
+│   │   └── oid4vci-wallet.spec.ts # VCI wallet conformance
 │   └── shared/                    # Shared test logic
 │       ├── credential-flow.shared.ts
 │       ├── user-flows.shared.ts
 │       └── ...
+├── configs/
+│   └── conformance/               # Conformance suite configs
+│       ├── vp-wallet-config.json  # OID4VP test plan config
+│       └── vci-wallet-config.json # OID4VCI test plan config
 ├── helpers/                       # Test utilities
+│   ├── conformance-api.ts         # Conformance suite API client
+│   ├── wallet-automation.ts       # Wallet UI automation (offer/VP)
 │   ├── vc-services.ts             # VC services API helper
 │   ├── shared-helpers.ts
 │   └── ...

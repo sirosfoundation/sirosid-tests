@@ -1,0 +1,10 @@
+{
+  "alias": "siros-wallet-vp-test",
+  "description": "OID4VP wallet conformance test for SIROS wallet",
+  "server": {
+    "authorization_endpoint": "openid4vp://"
+  },
+  "client": {
+    "client_id": "conformance.example.com"
+  }
+}
