@@ -16,14 +16,18 @@
  *   cd sirosid-tests && make test-conformance-vci
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../helpers/tenant-setup-fixture';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { ConformanceAPI, type TestState } from '../../helpers/conformance-api';
 import { acceptCredentialOffer } from '../../helpers/wallet-automation';
-import { registerUserViaUI, loginUserViaUI } from '../../helpers/ui-actions';
-import { ENV, generateTestId, createTenant, deleteTenant } from '../../helpers/shared-helpers';
-import { isSoftFidoAvailable, resetSoftFidoCredentials, generateTestUsername } from '../../helpers/softfido';
+import { loginUserViaUI } from '../../helpers/ui-actions';
+import { ENV } from '../../helpers/shared-helpers';
+import { WebAuthnHelper } from '../../helpers/webauthn';
 
 // =============================================================================
 // Configuration
@@ -38,11 +42,16 @@ const VCI_VARIANTS = [
     name: 'sd_jwt_vc / pre-authorized_code / immediate / by_value',
     variant: {
       credential_format: 'sd_jwt_vc',
-      vci_grant_type: 'pre-authorized_code',
+      vci_grant_type: 'pre_authorization_code',
       vci_credential_issuance_mode: 'immediate',
-      vci_credential_offer_parameter_variant: 'by_value',
+      vci_credential_offer_variant: 'by_value',
       sender_constrain: 'dpop',
       vci_credential_encryption: 'plain',
+      fapi_profile: 'vci',
+      fapi_request_method: 'unsigned',
+      client_auth_type: 'private_key_jwt',
+      authorization_request_type: 'simple',
+      vci_authorization_code_flow_variant: 'issuer_initiated',
     },
   },
 ];
@@ -59,18 +68,9 @@ const VCI_CONFIG_PATH = path.resolve(__dirname, '../../configs/conformance/vci-w
 
 test.describe('OID4VCI Wallet Conformance Suite', () => {
   const api = new ConformanceAPI(CONFORMANCE_URL);
-  let tenantId: string;
-  let testUsername: string;
-  let softFidoAvailable: boolean;
   let conformanceReady: boolean;
 
   test.beforeAll(async () => {
-    softFidoAvailable = isSoftFidoAvailable();
-    if (!softFidoAvailable) {
-      console.log('soft-fido2 not available, tests will be skipped');
-      return;
-    }
-
     try {
       await api.waitForServerReady(30000);
       conformanceReady = true;
@@ -82,10 +82,6 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
   });
 
   test.beforeEach(async () => {
-    if (!softFidoAvailable) {
-      test.skip(true, 'soft-fido2 not available');
-      return;
-    }
     if (!conformanceReady) {
       test.skip(true, 'Conformance suite not available');
       return;
@@ -97,38 +93,10 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
   // ===========================================================================
 
   test.describe('VCI Conformance Tests', () => {
-    let userId: string | undefined;
-
-    test.beforeAll(async ({ browser }) => {
-      if (!softFidoAvailable || !conformanceReady) return;
-
-      tenantId = generateTestId('conf-vci');
-      await createTenant(tenantId, `Conformance VCI ${tenantId}`);
-
-      // Register a new user via WebAuthn
-      testUsername = generateTestUsername('conf-vci');
-      const page = await browser.newPage();
-      try {
-        resetSoftFidoCredentials();
-
-        const regResult = await registerUserViaUI(page, {
-          username: testUsername,
-          tenantId,
-        });
-        if (!regResult.success) {
-          console.log('Registration failed:', regResult.error);
-          return;
-        }
-        userId = regResult.userId;
-        console.log(`Registered user: ${testUsername} (${userId})`);
-      } finally {
-        await page.close();
-      }
-    });
-
-    test.afterAll(async () => {
-      if (tenantId) {
-        await deleteTenant(tenantId).catch(() => {});
+    test.beforeEach(async ({ tenantContext }) => {
+      if (!tenantContext.ready) {
+        test.skip(true, tenantContext.error || 'Tenant setup failed');
+        return;
       }
     });
 
@@ -163,15 +131,144 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
           expect(planModules.length).toBeGreaterThan(0);
         });
 
-        test('should pass all VCI conformance modules', async ({ page }) => {
+        test('should pass all VCI conformance modules', async ({ page, tenantContext }) => {
           test.setTimeout(300000); // 5 minute timeout for all modules
 
           expect(planId).toBeDefined();
           expect(planModules.length).toBeGreaterThan(0);
 
+          // Register the conformance suite issuer for this tenant so the wallet uses the correct client_id
+          const configJson = JSON.parse(fs.readFileSync(VCI_CONFIG_PATH, 'utf-8'));
+          const conformanceClientId = configJson.client?.client_id || 'siros-wallet-test';
+          const conformanceIssuerUrl = CONFORMANCE_URL.replace(/\/$/, '') + '/test/a/' + (configJson.alias || 'siros-wallet-vci-test') + '/';
+
+          // Extract the client private key JWK for private_key_jwt authentication
+          // The client.jwks.keys[0] in the config contains the private key (has 'd' parameter)
+          const clientKeyWithPrivate = configJson.client?.jwks?.keys?.find((k: any) => k.d);
+          const clientPrivateKeyJwk = clientKeyWithPrivate ? JSON.stringify(clientKeyWithPrivate) : null;
+
+          const issuerResp = await fetch(`${ENV.ADMIN_URL}/admin/tenants/${tenantContext.tenantId}/issuers`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${ENV.ADMIN_TOKEN}`,
+            },
+            body: JSON.stringify({
+              credential_issuer_identifier: conformanceIssuerUrl,
+              client_id: conformanceClientId,
+              client_jwk: clientPrivateKeyJwk,
+              visible: true,
+            }),
+          });
+          console.log(`Registered conformance issuer for tenant: ${issuerResp.status} (client_id=${conformanceClientId}, has_jwk=${!!clientPrivateKeyJwk})`);
+
+          // Set up CDP virtual authenticator for headless WebAuthn
+          const webauthn = new WebAuthnHelper(page);
+          await webauthn.initialize();
+          await webauthn.injectPrfMock();
+          await webauthn.addPlatformAuthenticator();
+
+          // Inject credentials from registration so login works
+          if (tenantContext.credentials) {
+            for (const cred of tenantContext.credentials) {
+              await webauthn.addCredential(cred);
+            }
+          }
+
           // Login the user
-          const loginResult = await loginUserViaUI(page, { tenantId });
+          const loginResult = await loginUserViaUI(page, { tenantId: tenantContext.tenantId });
           expect(loginResult.success).toBe(true);
+
+          // Wait for the wallet to fully initialize after login
+          // The frontend needs time to process the login response, open keystore, and navigate
+          await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 }).catch(() => {});
+          await page.waitForTimeout(3000);
+          
+          // Verify we're on the home/credentials page (not login)
+          const afterLoginUrl = page.url();
+          console.log(`After login URL: ${afterLoginUrl}`);
+          if (afterLoginUrl.includes('/login')) {
+            // Login didn't complete at the frontend level
+            console.log('WARNING: Still on login page. Checking PRF retry...');
+            const continueBtn = page.locator('button:has-text("Continue")');
+            if (await continueBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+              console.log('PRF retry dialog found, clicking Continue...');
+              await continueBtn.click();
+              await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 });
+              await page.waitForTimeout(2000);
+            }
+          }
+          console.log(`Final URL after login: ${page.url()}`);
+
+          // Dismiss "Welcome to wwWallet!" tour if it appears after login
+          const welcomeDismiss = page.locator('button:has-text("Dismiss")');
+          if (await welcomeDismiss.isVisible({ timeout: 3000 }).catch(() => false)) {
+            console.log('Dismissing Welcome tour after initial login...');
+            await welcomeDismiss.click();
+            await page.waitForTimeout(1000);
+          }
+
+          // Forward browser console to test output
+          page.on('console', msg => {
+            const text = msg.text();
+            const type = msg.type();
+            if (type === 'error' || type === 'warning') {
+              console.log(`[BROWSER ${type.toUpperCase()}] ${text.substring(0, 500)}`);
+            } else if (text.includes('Schema validation failed')) {
+              console.log(`[BROWSER] ${text.substring(0, 2000)}`);
+            } else if (text.includes('Uri Handler') || text.includes('credential') || text.includes('Generating') || text.includes('syncing') || text.includes('Sync') || text.includes('Actually') || text.includes('token') || text.includes('Token') || text.includes('request') || text.includes('Request') || text.includes('error') || text.includes('Error') || text.includes('DPoP') || text.includes('dpop') || text.includes('grant') || text.includes('pre-authorized') || text.includes('issuer')) {
+              console.log(`[BROWSER] ${text.substring(0, 500)}`);
+            }
+          });
+          page.on('pageerror', err => {
+            console.log(`[PAGE ERROR] ${err.message.substring(0, 500)}`);
+          });
+
+          // Register dialog handler once before the module loop
+          page.on('dialog', async (dialog) => {
+            console.log(`[Dialog] ${dialog.type()}: ${dialog.message()}`);
+            if (dialog.type() === 'prompt') {
+              await dialog.accept('123456');
+            } else {
+              await dialog.accept();
+            }
+          });
+
+          // Log proxy requests/responses to see token/credential exchanges
+          page.on('request', async (request) => {
+            const url = request.url();
+            if (url.includes('/proxy') && request.method() === 'POST') {
+              try {
+                const postData = request.postData();
+                if (postData) {
+                  const parsed = JSON.parse(postData);
+                  console.log(`[PROXY REQ] ${parsed.method || 'GET'} ${parsed.url?.substring(0, 120)}`);
+                  if (parsed.headers) {
+                    const hdrs = Object.entries(parsed.headers).map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`).join(', ');
+                    console.log(`[PROXY REQ HEADERS] ${hdrs}`);
+                  }
+                  if (parsed.data) {
+                    console.log(`[PROXY REQ BODY] ${typeof parsed.data === 'string' ? parsed.data.substring(0, 500) : JSON.stringify(parsed.data).substring(0, 500)}`);
+                  }
+                }
+              } catch { /* */ }
+            }
+          });
+          page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('/proxy')) {
+              try {
+                const body = await response.text();
+                const parsed = JSON.parse(body);
+                if (parsed.status && parsed.status >= 400) {
+                  console.log(`[PROXY ERROR ${parsed.status}] ${JSON.stringify(parsed.data).substring(0, 1000)}`);
+                  console.log(`[PROXY ERROR HEADERS] ${JSON.stringify(parsed.headers).substring(0, 500)}`);
+                } else {
+                  console.log(`[PROXY ${parsed.status || response.status()}] data keys: ${parsed.data ? Object.keys(parsed.data).join(',') : 'none'}`);
+                }
+              } catch { /* response body may not be available */ }
+            }
+          });
 
           const results: Array<{
             module: string;
@@ -233,11 +330,85 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
             } else {
               // Drive the wallet to accept the credential offer
               console.log(`Module ${moduleName}: accepting offer via ${interactionUrl.slice(0, 80)}...`);
-              const offerResult = await acceptCredentialOffer(page, interactionUrl);
 
-              if (!offerResult.success) {
-                console.log(`Module ${moduleName}: wallet offer acceptance failed: ${offerResult.error}`);
+              // Navigate to the credential offer URL.
+              // The wallet session (PRF key) is in memory, so we can't do page.goto().
+              // Instead, set window.location.href from within the page, which causes a
+              // navigation but the wallet's UriHandlerProvider will detect the credential_offer
+              // param during the fresh page load. However, since the keystore is in memory,
+              // the user won't be logged in after reload.
+              //
+              // The correct approach for the web wallet is to update the URL without reload:
+              // The wallet's UriHandlerProvider watches `location` from useLocation().
+              // We need to use React Router's navigate function to trigger SPA navigation.
+              console.log(`Module ${moduleName}: injecting credential offer URL into SPA...`);
+              await page.evaluate((offerUrl) => {
+                // Set the URL and trigger a custom event that the wallet can pick up
+                const url = new URL(offerUrl, window.location.origin);
+                // Directly set window.location.search which triggers useLocation
+                window.history.pushState(null, '', url.pathname + url.search);
+                // Manually trigger React Router by dispatching popstate
+                window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+              }, interactionUrl);
+
+              // Wait a moment, then check if the Uri Handler picked it up
+              await page.waitForTimeout(3000);
+
+              // If the SPA navigation didn't work, try a full page navigation approach:
+              // The wallet will redirect to /login but preserve the credential_offer param.
+              // We then need to re-authenticate.
+              const currentUrl = page.url();
+              console.log(`Module ${moduleName}: current URL after pushState: ${currentUrl.slice(0, 100)}`);
+
+              // Check if Uri Handler logged anything
+              const uriHandlerFired = await page.evaluate(() => {
+                return document.querySelector('[data-testid="credentials"]') !== null ||
+                       document.querySelector('.toast') !== null;
+              }).catch(() => false);
+
+              if (!uriHandlerFired) {
+                console.log(`Module ${moduleName}: SPA navigation didn't trigger handler. Trying full navigation with re-login...`);
+                // Full page navigation - session will be lost, need to re-login
+                const cbUrl = `${FRONTEND_URL}/id/${tenantContext.tenantId}/cb?` +
+                  interactionUrl.replace('openid-credential-offer://?', '');
+                await page.goto(cbUrl, { waitUntil: 'networkidle', timeout: 30000 });
+                await page.waitForTimeout(2000);
+
+                // The wallet redirects to login preserving the credential_offer param
+                // Re-login with WebAuthn
+                const loginBtn = page.locator('button:has-text("Log in with a Passkey")');
+                if (await loginBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                  console.log(`Module ${moduleName}: re-logging in after redirect...`);
+                  await loginBtn.click();
+                  await page.waitForTimeout(5000);
+                }
               }
+
+              // Handle UI popups during credential processing
+              // 1. Dismiss "Welcome to wwWallet!" tour if it appears
+              const dismissBtn = page.locator('button:has-text("Dismiss")');
+              if (await dismissBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                console.log(`Module ${moduleName}: dismissing Welcome tour...`);
+                await dismissBtn.click();
+                await page.waitForTimeout(1000);
+              }
+
+              // 2. Handle "Transaction Code Required" popup if it appears
+              const txCodeInput = page.locator('input[placeholder*="character code"]');
+              const txSubmitBtn = page.locator('button:has-text("Submit")');
+              // Wait for the TX code dialog or credential processing to complete
+              try {
+                await txCodeInput.waitFor({ state: 'visible', timeout: 15000 });
+                console.log(`Module ${moduleName}: filling TX code 123456...`);
+                await txCodeInput.fill('123456');
+                await txSubmitBtn.click();
+                console.log(`Module ${moduleName}: TX code submitted`);
+              } catch {
+                console.log(`Module ${moduleName}: no TX code popup appeared`);
+              }
+
+              // Wait for credential processing to complete
+              await page.waitForTimeout(15000);
             }
 
             // Wait for the module to finish

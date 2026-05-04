@@ -394,13 +394,18 @@ export class ConformanceAPI {
     for (const entry of logs) {
       const msg = entry.msg || '';
 
+      // OID4VCI: check credential_offer_redirect_url field directly
+      if ((entry as any).credential_offer_redirect_url) {
+        return (entry as any).credential_offer_redirect_url;
+      }
+
       // OID4VP: look for authorization request URL
       if (msg.includes('request_uri=') || msg.includes('client_id=')) {
         const match = msg.match(/https?:\/\/[^\s"']+request_uri=[^\s"']+/);
         if (match) return match[0];
       }
 
-      // OID4VCI: look for credential offer
+      // OID4VCI: look for credential offer in msg
       if (msg.includes('credential_offer_uri=') || msg.includes('openid-credential-offer')) {
         const match = msg.match(/(openid-credential-offer:\/\/[^\s"']+|https?:\/\/[^\s"']+credential_offer[^\s"']+)/);
         if (match) return match[0];

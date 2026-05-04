@@ -159,10 +159,17 @@ export async function registerUserViaUI(
   await expect(nameInput).toBeVisible({ timeout: 10000 });
   await nameInput.fill(options.username);
 
-  // Click the security-key (USB/roaming) passkey signup button
-  // soft-fido2 presents as a USB HID authenticator, not a platform authenticator
-  const signupButton = page.locator('[id*="signUpPasskey"][id*="security-key"][id*="submit"]');
-  await expect(signupButton).toBeVisible({ timeout: 10000 });
+  // Click the passkey signup button
+  // Try the new unified button first, fall back to legacy security-key button
+  const unifiedSignupButton = page.locator('button:has-text("Create account with a Passkey")');
+  const legacySignupButton = page.locator('[id*="signUpPasskey"][id*="security-key"][id*="submit"]');
+  let signupButton;
+  if (await unifiedSignupButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+    signupButton = unifiedSignupButton;
+  } else {
+    signupButton = legacySignupButton;
+    await expect(signupButton).toBeVisible({ timeout: 10000 });
+  }
 
   // Click and wait for the registration to complete with timeout
   const WEBAUTHN_TIMEOUT = 20000;
@@ -321,9 +328,14 @@ export async function loginUserViaUI(
   }
 
   if (!loginButton) {
-    // Fall back to security-key (USB/roaming) passkey login button
-    // soft-fido2 presents as a USB HID authenticator, not a platform authenticator
-    loginButton = page.locator('#loginPasskey-security-key-submit-loginsignup');
+    // Try the new unified "Log in with a Passkey" button first
+    const unifiedLoginButton = page.locator('button:has-text("Log in with a Passkey")');
+    if (await unifiedLoginButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      loginButton = unifiedLoginButton;
+    } else {
+      // Fall back to legacy security-key (USB/roaming) passkey login button
+      loginButton = page.locator('#loginPasskey-security-key-submit-loginsignup');
+    }
   }
 
   await expect(loginButton).toBeVisible({ timeout: 15000 });

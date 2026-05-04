@@ -76,6 +76,7 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    ignoreHTTPSErrors: true,
     // Each test gets a clean browser context - no localStorage/cookies from previous tests
     storageState: undefined,
   },

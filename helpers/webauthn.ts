@@ -202,6 +202,20 @@ export class WebAuthnHelper {
   }
 
   /**
+   * Add a credential to the virtual authenticator (e.g. imported from another session)
+   */
+  async addCredential(credential: any): Promise<void> {
+    if (!this.cdpSession || !this.authenticatorId) {
+      throw new Error('Authenticator not initialized');
+    }
+
+    await this.cdpSession.send('WebAuthn.addCredential', {
+      authenticatorId: this.authenticatorId,
+      credential,
+    });
+  }
+
+  /**
    * Clear all credentials from the authenticator
    */
   async clearCredentials(): Promise<void> {

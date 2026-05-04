@@ -17,14 +17,18 @@
  *   cd sirosid-tests && make test-conformance-vp
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../helpers/tenant-setup-fixture';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { ConformanceAPI, type TestState } from '../../helpers/conformance-api';
 import { presentCredential, convertToWalletCallbackUrl, issueCredentialToWallet, isVCServicesAvailable } from '../../helpers/wallet-automation';
-import { registerUserViaUI, loginUserViaUI } from '../../helpers/ui-actions';
-import { ENV, generateTestId, createTenant, deleteTenant } from '../../helpers/shared-helpers';
-import { isSoftFidoAvailable, resetSoftFidoCredentials, generateTestUsername } from '../../helpers/softfido';
+import { loginUserViaUI } from '../../helpers/ui-actions';
+import { ENV } from '../../helpers/shared-helpers';
+import { isSoftFidoAvailable } from '../../helpers/softfido';
 import { CREDENTIAL_TYPES } from '../../helpers/vc-services';
 
 // =============================================================================
@@ -59,8 +63,6 @@ const VP_CONFIG_PATH = path.resolve(__dirname, '../../configs/conformance/vp-wal
 
 test.describe('OID4VP Wallet Conformance Suite', () => {
   const api = new ConformanceAPI(CONFORMANCE_URL);
-  let tenantId: string;
-  let testUsername: string;
   let softFidoAvailable: boolean;
   let conformanceReady: boolean;
 
@@ -95,15 +97,15 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
   });
 
   // ===========================================================================
-  // Setup: Register and login user, pre-load credential
+  // Setup: Login user and pre-load credential
   // ===========================================================================
 
   test.describe('VP Conformance Tests', () => {
-    let userId: string | undefined;
     let credentialLoaded = false;
 
-    test.beforeAll(async ({ browser }) => {
+    test.beforeAll(async ({ browser, tenantContext }) => {
       if (!softFidoAvailable || !conformanceReady) return;
+      if (!tenantContext.ready) return;
 
       // Check VC services availability for credential pre-loading
       const vcAvailable = await isVCServicesAvailable();
@@ -113,29 +115,10 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
         return;
       }
 
-      // Create tenant for conformance tests
-      tenantId = generateTestId('conf-vp');
-      await createTenant(tenantId, `Conformance VP ${tenantId}`);
-
-      // Register a new user via WebAuthn
-      testUsername = generateTestUsername('conf-vp');
+      // Login and pre-load credential
       const page = await browser.newPage();
       try {
-        resetSoftFidoCredentials();
-
-        const regResult = await registerUserViaUI(page, {
-          username: testUsername,
-          tenantId,
-        });
-        if (!regResult.success) {
-          console.log('Registration failed:', regResult.error);
-          return;
-        }
-        userId = regResult.userId;
-        console.log(`Registered user: ${testUsername} (${userId})`);
-
-        // Login to the wallet before issuing the credential
-        const loginResult = await loginUserViaUI(page, { tenantId });
+        const loginResult = await loginUserViaUI(page, { tenantId: tenantContext.tenantId });
         if (!loginResult.success) {
           console.log('Login failed for credential pre-loading:', loginResult.error);
           return;
@@ -155,9 +138,10 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
       }
     });
 
-    test.afterAll(async () => {
-      if (tenantId) {
-        await deleteTenant(tenantId).catch(() => {});
+    test.beforeEach(async ({ tenantContext }) => {
+      if (!tenantContext.ready) {
+        test.skip(true, tenantContext.error || 'Tenant setup failed');
+        return;
       }
     });
 
@@ -197,7 +181,7 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
         // Run each module as a separate test
         // Note: We don't know the exact module names at code time, so we
         // run a dynamic test that iterates over the plan modules.
-        test('should pass all VP conformance modules', async ({ page }) => {
+        test('should pass all VP conformance modules', async ({ page, tenantContext }) => {
           test.setTimeout(300000); // 5 minute timeout for all modules
 
           expect(planId).toBeDefined();
@@ -209,7 +193,7 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
           }
 
           // Login the user
-          const loginResult = await loginUserViaUI(page, { tenantId });
+          const loginResult = await loginUserViaUI(page, { tenantId: tenantContext.tenantId });
           expect(loginResult.success).toBe(true);
 
           const results: Array<{
