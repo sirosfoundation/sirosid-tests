@@ -12,6 +12,87 @@ This repository contains Playwright-based E2E tests that can run against any SIR
 - **Production environments** (public tests only)
 - **Any remote wallet** (subset of tests appropriate for external systems)
 
+## Getting Started with the Conformance Test Suite
+
+The fastest path to running the OpenID Foundation Conformance Suite against the
+SIROS ID wallet:
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Node.js 18+ and npm
+- Sibling repos checked out alongside `sirosid-tests`:
+  ```
+  siros.org/
+  ├── sirosid-dev/          # local dev environment (docker-compose)
+  ├── sirosid-tests/        # this repo
+  ├── wallet-frontend/      # web wallet UI
+  ├── go-wallet-backend/    # wallet backend (Go)
+  ├── go-trust/             # trust PDP
+  └── vc/                   # VC services (SUNET/vc)
+  ```
+
+### 1. Start the conformance environment
+
+```bash
+cd ../sirosid-dev
+make up-conformance
+```
+
+This starts the full wallet stack, VC services, go-trust (allow-all mode),
+and the OpenID Conformance Suite server. It also ensures the required
+`/etc/hosts` entry for `localhost.emobix.co.uk` exists.
+
+Wait for all services to be healthy:
+```bash
+make status
+```
+
+### 2. Install test dependencies
+
+```bash
+cd ../sirosid-tests
+make install
+```
+
+### 3. Verify connectivity
+
+```bash
+make check-conformance-env
+```
+
+### 4. Run conformance tests
+
+```bash
+# All conformance tests (VP + VCI)
+make test-conformance
+
+# Or individually:
+make test-conformance-vp    # OID4VP wallet conformance
+make test-conformance-vci   # OID4VCI wallet conformance
+```
+
+### What gets tested
+
+- **OID4VCI**: The conformance suite acts as an issuer. It creates a test plan
+  with sd-jwt-vc / pre-authorized code / DPoP / private_key_jwt variants and
+  issues credential offers that the wallet must accept.
+- **OID4VP**: The suite acts as a verifier. The test pre-loads a PID credential
+  from the VC issuer, then runs conformance modules that send authorization
+  requests the wallet must respond to.
+
+Test plan configuration (JWKs, client IDs, variants) lives in
+`configs/conformance/`.
+
+### Stopping
+
+```bash
+cd ../sirosid-dev
+make down-conformance
+```
+
+---
+
 ## Test Categories
 
 | Category | Directory | Admin API Required | Description |
