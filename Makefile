@@ -29,8 +29,7 @@ ENGINE_URL ?= http://localhost:8082
 ADMIN_URL ?= http://localhost:8081
 ADMIN_TOKEN ?= e2e-test-admin-token-for-testing-purposes-only
 
-# Optional service URLs (mock services)
-MOCK_ISSUER_URL ?= http://localhost:9000
+# Optional service URLs
 MOCK_VERIFIER_URL ?= http://localhost:9001
 TRUST_PDP_URL ?= http://localhost:9091
 VCTM_REGISTRY_URL ?= http://localhost:8097
@@ -56,9 +55,8 @@ TEST_ENV := FRONTEND_URL=$(FRONTEND_URL) \
             ENGINE_URL=$(ENGINE_URL) \
             ADMIN_URL=$(ADMIN_URL) \
             ADMIN_TOKEN=$(ADMIN_TOKEN) \
-            ISSUER_URL=$(MOCK_ISSUER_URL) \
+            ISSUER_URL=$(VC_ISSUER_URL) \
             VERIFIER_URL=$(MOCK_VERIFIER_URL) \
-            MOCK_ISSUER_URL=$(MOCK_ISSUER_URL) \
             MOCK_VERIFIER_URL=$(MOCK_VERIFIER_URL) \
             TRUST_PDP_URL=$(TRUST_PDP_URL) \
             MOCK_PDP_URL=$(TRUST_PDP_URL) \

@@ -14,7 +14,7 @@
  * - go-wallet-backend running on BACKEND_URL (default: http://localhost:8080)
  * - Admin API running on ADMIN_URL (default: http://localhost:8081)
  * - ADMIN_TOKEN environment variable set for authentication
- * - Optional: mock-issuer running on MOCK_ISSUER_URL
+ * - Optional: VC issuer running on VC_ISSUER_URL
  */
 
 import { test, expect, type APIRequestContext } from '@playwright/test';
@@ -24,7 +24,7 @@ import { IssuerApiHelper, type Issuer } from '../../helpers/issuer-api';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:8081';
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
-const MOCK_ISSUER_URL = process.env.MOCK_ISSUER_URL || 'http://localhost:9000';
+const VC_ISSUER_URL = process.env.VC_ISSUER_URL || 'http://localhost:9000';
 
 test.describe('Admin API - Status @api @admin', () => {
   let request: APIRequestContext;
@@ -256,40 +256,40 @@ test.describe('Admin API - Mock Issuer Lifecycle @api @admin', () => {
     await publicRequest.dispose();
   });
 
-  test('register mock issuer via admin API', async () => {
+  test('register VC issuer via admin API', async () => {
     // First, check current state
     const existingIssuers = await issuerApi.listIssuers('default');
-    const existingMockIssuer = existingIssuers.find(
-      i => i.credential_issuer_identifier === MOCK_ISSUER_URL
+    const existingVcIssuer = existingIssuers.find(
+      i => i.credential_issuer_identifier === VC_ISSUER_URL
     );
 
     // If it exists, remove it first for a clean test
-    if (existingMockIssuer) {
-      await issuerApi.deleteIssuer('default', existingMockIssuer.id);
+    if (existingVcIssuer) {
+      await issuerApi.deleteIssuer('default', existingVcIssuer.id);
     }
 
-    // Register the mock issuer
-    const mockIssuer = await issuerApi.registerMockIssuer('default', MOCK_ISSUER_URL);
+    // Register the VC issuer
+    const vcIssuer = await issuerApi.registerVcIssuer('default', VC_ISSUER_URL);
 
-    expect(mockIssuer.credential_issuer_identifier).toBe(MOCK_ISSUER_URL);
-    expect(mockIssuer.tenant_id).toBe('default');
-    expect(mockIssuer.visible).toBe(true);
+    expect(vcIssuer.credential_issuer_identifier).toBe(VC_ISSUER_URL);
+    expect(vcIssuer.tenant_id).toBe('default');
+    expect(vcIssuer.visible).toBe(true);
   });
 
-  test('mock issuer appears in issuers list via admin API', async () => {
+  test('VC issuer appears in issuers list via admin API', async () => {
     // Ensure it's registered
-    await issuerApi.registerMockIssuer('default', MOCK_ISSUER_URL);
+    await issuerApi.registerVcIssuer('default', VC_ISSUER_URL);
 
     const issuers = await issuerApi.listIssuers('default');
-    const mockIssuer = issuers.find(i => i.credential_issuer_identifier === MOCK_ISSUER_URL);
+    const vcIssuer = issuers.find(i => i.credential_issuer_identifier === VC_ISSUER_URL);
 
-    expect(mockIssuer).toBeDefined();
-    expect(mockIssuer!.visible).toBe(true);
+    expect(vcIssuer).toBeDefined();
+    expect(vcIssuer!.visible).toBe(true);
   });
 
-  test('mock issuer is accessible via public /issuers endpoint', async () => {
+  test('VC issuer is accessible via public /issuers endpoint', async () => {
     // Ensure it's registered
-    await issuerApi.registerMockIssuer('default', MOCK_ISSUER_URL);
+    await issuerApi.registerVcIssuer('default', VC_ISSUER_URL);
 
     // Query the public API - may require authentication
     const response = await publicRequest.get(`${BACKEND_URL}/issuers`);
@@ -308,37 +308,37 @@ test.describe('Admin API - Mock Issuer Lifecycle @api @admin', () => {
     const data = await response.json();
     const issuers = data.credential_issuers || data.issuers || [];
 
-    // The mock issuer should be visible
+    // The VC issuer should be visible
     console.log('Public issuers response:', JSON.stringify(data, null, 2));
   });
 
-  test('unregister mock issuer via admin API', async () => {
+  test('unregister VC issuer via admin API', async () => {
     // Ensure it's registered first
-    await issuerApi.registerMockIssuer('default', MOCK_ISSUER_URL);
+    await issuerApi.registerVcIssuer('default', VC_ISSUER_URL);
 
     // Now unregister
-    const deleted = await issuerApi.unregisterMockIssuer('default', MOCK_ISSUER_URL);
+    const deleted = await issuerApi.unregisterVcIssuer('default', VC_ISSUER_URL);
     expect(deleted).toBe(true);
 
     // Verify it's gone from admin API
-    const found = await issuerApi.findIssuerByIdentifier('default', MOCK_ISSUER_URL);
+    const found = await issuerApi.findIssuerByIdentifier('default', VC_ISSUER_URL);
     expect(found).toBeNull();
   });
 
-  test('mock issuer no longer in issuers list after removal', async () => {
+  test('VC issuer no longer in issuers list after removal', async () => {
     // Make sure it's removed
-    await issuerApi.unregisterMockIssuer('default', MOCK_ISSUER_URL);
+    await issuerApi.unregisterVcIssuer('default', VC_ISSUER_URL);
 
     const issuers = await issuerApi.listIssuers('default');
-    const mockIssuer = issuers.find(i => i.credential_issuer_identifier === MOCK_ISSUER_URL);
+    const vcIssuer = issuers.find(i => i.credential_issuer_identifier === VC_ISSUER_URL);
 
-    expect(mockIssuer).toBeUndefined();
+    expect(vcIssuer).toBeUndefined();
   });
 
-  test('re-register mock issuer for other tests', async () => {
-    // Leave the mock issuer registered for other tests
-    const mockIssuer = await issuerApi.registerMockIssuer('default', MOCK_ISSUER_URL);
-    expect(mockIssuer.credential_issuer_identifier).toBe(MOCK_ISSUER_URL);
+  test('re-register VC issuer for other tests', async () => {
+    // Leave the VC issuer registered for other tests
+    const vcIssuer = await issuerApi.registerVcIssuer('default', VC_ISSUER_URL);
+    expect(vcIssuer.credential_issuer_identifier).toBe(VC_ISSUER_URL);
   });
 });
 

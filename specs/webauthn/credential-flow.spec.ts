@@ -5,13 +5,12 @@
  *
  * These tests exercise complete credential issuance and verification flows:
  * 1. Register/login user via WebAuthn
- * 2. Obtain credential from mock issuer via OpenID4VCI
+ * 2. Obtain credential from VC issuer via OpenID4VCI
  * 3. Present credential to mock verifier via OpenID4VP
  *
  * Prerequisites:
- *   - Run full-flow mock issuer on port 9000
- *   - Run full-flow mock verifier on port 9001
- *   - SOFT_FIDO2_PATH=/path/to/soft-fido2 make up
+ *   - Run VC services (issuer on port 9000, verifier on port 9001):
+ *     make up-vc
  *   - make test-credential-flow
  */
 
@@ -364,10 +363,10 @@ async function waitForWalletReady(page: Page): Promise<void> {
  * Flow:
  * 1. Navigate to wallet with credential_offer_uri param
  * 2. Wallet syncs private data
- * 3. UriHandlerProvider processes the offer and redirects to issuer's authorize endpoint
- * 4. User "consents" at issuer (mock issuer auto-approves)
- * 5. Issuer redirects back to wallet with authorization code
- * 6. Wallet exchanges code for credentials
+ * 3. UriHandlerProvider processes the offer and redirects to /cb
+ * 4. OpenIDFlowCallback waits for transport ready, then starts VCI flow
+ * 5. Wallet resolves offer, fetches issuer metadata, evaluates trust
+ * 6. Wallet exchanges code/pre-auth for credentials
  */
 async function acceptCredentialOffer(
   page: Page,
@@ -381,21 +380,27 @@ async function acceptCredentialOffer(
   // Wait for the page to fully load
   await page.waitForLoadState('networkidle');
   
-  // The wallet needs to sync before UriHandlerProvider processes the URL.
-  // Wait for possible redirect to issuer's authorization endpoint.
-  // The mock issuer's authorize endpoint will auto-approve and redirect back.
+  // The wallet needs to sync, then UriHandlerProvider redirects to /cb,
+  // then the VCI flow processes the offer (metadata fetch, trust evaluation, etc.)
   console.log('Waiting for wallet to process credential offer...');
   
-  // Wait longer for the wallet's UriHandlerProvider to process the URL
+  // Wait for the wallet to sync and process the URL
   // This requires: isLoggedIn && synced && url has params
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 20; i++) {
     await page.waitForTimeout(1000);
     const currentUrl = page.url();
     
-    // Check if we were redirected to the issuer's authorize endpoint
-    if (currentUrl.includes('/authorize') || currentUrl.includes('localhost:9000')) {
+    // Check if we were redirected to /cb (offer is being processed)
+    if (currentUrl.includes('/cb')) {
+      console.log('Redirected to /cb — flow is processing');
+      // Wait for the flow to complete (navigates back to home or shows modal)
+      await page.waitForTimeout(5000);
+      break;
+    }
+    
+    // Check if we were redirected to the issuer's authorize endpoint (auth code flow)
+    if (currentUrl.includes('/authorize') || currentUrl.includes('localhost:9000') || currentUrl.includes('localhost:9003')) {
       console.log('Redirected to issuer authorization:', currentUrl);
-      // Wait for issuer to redirect back with auth code
       await page.waitForURL(/code=|credential/, { timeout: 30000 }).catch(() => {});
       break;
     }
@@ -633,7 +638,7 @@ credTest.describe('Full Credential Flow', () => {
 });
 
 // =============================================================================
-// Mock Issuer/Verifier Tests — only run when external services are available
+// VC Issuer/Verifier Tests — only run when external services are available
 // =============================================================================
 
 /**
@@ -661,7 +666,7 @@ const mockServiceTest = test.extend({
   },
 });
 
-mockServiceTest.describe('Mock Issuer/Verifier Services', () => {
+mockServiceTest.describe('VC Issuer/Verifier Services', () => {
   let issuerAvailable = false;
   let verifierAvailable = false;
 
@@ -669,15 +674,15 @@ mockServiceTest.describe('Mock Issuer/Verifier Services', () => {
     issuerAvailable = await isServiceHealthy(ISSUER_URL);
     verifierAvailable = await isServiceHealthy(VERIFIER_URL);
     if (!issuerAvailable) {
-      console.log(`Mock issuer not available at ${ISSUER_URL} — skipping issuer tests`);
+      console.log(`VC issuer not available at ${ISSUER_URL} — skipping issuer tests`);
     }
     if (!verifierAvailable) {
       console.log(`Mock verifier not available at ${VERIFIER_URL} — skipping verifier tests`);
     }
   });
 
-  mockServiceTest('mock issuer is healthy', async ({ request }) => {
-    test.skip(!issuerAvailable, `Mock issuer not running at ${ISSUER_URL}`);
+  mockServiceTest('VC issuer is healthy', async ({ request }) => {
+    test.skip(!issuerAvailable, `VC issuer not running at ${ISSUER_URL}`);
     const response = await request.get(`${ISSUER_URL}/health`);
     expect(response.ok()).toBe(true);
     const data = await response.json();
@@ -695,12 +700,12 @@ mockServiceTest.describe('Mock Issuer/Verifier Services', () => {
   });
 
   mockServiceTest('obtain credential via OpenID4VCI (pre-authorized)', async ({ page, request }) => {
-    test.skip(!issuerAvailable, `Mock issuer not running at ${ISSUER_URL}`);
+    test.skip(!issuerAvailable, `VC issuer not running at ${ISSUER_URL}`);
 
-    // Check if mock issuer has /offer endpoint
-    const offerCheck = await request.get(`${ISSUER_URL}/offer`).catch(() => null);
-    if (!offerCheck || !offerCheck.ok()) {
-      test.skip(true, 'No /offer endpoint (likely using VC services)');
+    // Check if issuer has credential offer endpoint (VC services use /api/credential-offer)
+    const metadataCheck = await request.get(`${ISSUER_URL}/.well-known/openid-credential-issuer`).catch(() => null);
+    if (!metadataCheck || !metadataCheck.ok()) {
+      test.skip(true, 'Issuer metadata not available');
     }
 
     page.on('console', msg => {
@@ -719,21 +724,32 @@ mockServiceTest.describe('Mock Issuer/Verifier Services', () => {
 
     await page.waitForTimeout(3000);
 
-    // Get a credential offer from the mock issuer
-    const offerResponse = await request.get(`${ISSUER_URL}/offer`);
+    // Get a credential offer from the VC issuer
+    // The VC issuer serves .well-known/openid-credential-issuer with credential_offer_uri
+    const offerResponse = await request.get(`${ISSUER_URL}/.well-known/openid-credential-issuer`);
     expect(offerResponse.ok()).toBe(true);
-    const offerData = await offerResponse.json();
-    expect(offerData.credential_offer_uri).toBeDefined();
-    console.log('Got credential offer:', offerData);
+    const metadata = await offerResponse.json();
+    
+    // Use the first available credential configuration to construct an offer
+    // For pre-authorized flow, the VC apigw provides /offers/:scope/:walletId
+    const apigwUrl = process.env.VC_APIGW_URL || 'http://localhost:9003';
+    const offerApiResponse = await request.get(`${apigwUrl}/offers/default/local`).catch(() => null);
+    if (!offerApiResponse || !offerApiResponse.ok()) {
+      test.skip(true, 'VC API Gateway not available for credential offers');
+    }
+    const offerData = await offerApiResponse!.json();
+    const credentialOfferUri = offerData.qr?.uri;
+    expect(credentialOfferUri).toBeDefined();
+    console.log('Got credential offer URI:', credentialOfferUri);
 
-    const walletOfferUrl = `${FRONTEND_URL}/?credential_offer_uri=${encodeURIComponent(offerData.credential_offer_uri)}`;
+    const walletOfferUrl = `${FRONTEND_URL}/?credential_offer_uri=${encodeURIComponent(credentialOfferUri)}`;
     const issueResult = await acceptCredentialOffer(page, walletOfferUrl);
     expect(issueResult.success).toBe(true);
     console.log('Credential obtained successfully');
   });
 
   mockServiceTest.skip('present credential via OpenID4VP', async ({ page, request }) => {
-    test.skip(!issuerAvailable || !verifierAvailable, 'Mock issuer and verifier both required');
+    test.skip(!issuerAvailable || !verifierAvailable, 'VC issuer and verifier both required');
     // Full VP flow — skipped until wallet frontend handles OID4VP requests
   });
 });
@@ -749,8 +765,7 @@ test.describe('Credential Flow with Authorization Code', () => {
     // 5. Wallet exchanges code for tokens
     // 6. Wallet requests credential
     
-    // For now, this is skipped as it requires more sophisticated mock issuer
-    // that can handle the full OAuth flow with user interaction
+    // Requires VC services with apigw + mockas for the full OAuth flow
   });
 });
 

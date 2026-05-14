@@ -23,20 +23,20 @@ const GO_TRUST_ALLOW_URL = process.env.GO_TRUST_ALLOW_URL || 'http://localhost:9
 const GO_TRUST_DENY_URL = process.env.GO_TRUST_DENY_URL || 'http://localhost:9092';
 const GO_TRUST_WHITELIST_URL = process.env.GO_TRUST_WHITELIST_URL || 'http://localhost:9093';
 
-// Mock service URLs  
+// VC service URLs  
 // For key binding tests, we need to use the Docker internal URL because
-// go-trust-whitelist runs inside Docker and needs to fetch JWKS from mock-issuer
-const MOCK_ISSUER_URL = process.env.MOCK_ISSUER_URL || 'http://localhost:9000';
+// go-trust-whitelist runs inside Docker and needs to fetch JWKS from vc-issuer
+const VC_ISSUER_URL = process.env.VC_ISSUER_URL || 'http://localhost:9000';
 const MOCK_VERIFIER_URL = process.env.MOCK_VERIFIER_URL || 'http://localhost:9001';
 
 // Docker-internal URLs for whitelist tests (go-trust fetches JWKS from these)
-const MOCK_ISSUER_DOCKER_URL = 'http://mock-issuer:9000';
+const VC_ISSUER_DOCKER_URL = 'http://vc-issuer:8080';
 const MOCK_VERIFIER_DOCKER_URL = 'http://mock-verifier:9001';
 
 // Unknown issuer (not in whitelist)
 const UNKNOWN_ISSUER_ID = 'http://unknown-issuer.example.com';
 
-// Helper to fetch JWKS from mock services
+// Helper to fetch JWKS from VC services
 async function fetchJWKS(baseUrl: string): Promise<{ keys: any[] }> {
   const ctx = await request.newContext();
   const response = await ctx.get(`${baseUrl}/.well-known/jwks.json`);
@@ -109,11 +109,11 @@ test.describe('Always-Trusted Registry', () => {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_URL,
+          id: VC_ISSUER_URL,
         },
         resource: {
           type: 'jwk',
-          id: MOCK_ISSUER_URL,
+          id: VC_ISSUER_URL,
         },
         action: {
           name: 'issuer',
@@ -157,11 +157,11 @@ test.describe('Never-Trusted Registry', () => {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_URL,
+          id: VC_ISSUER_URL,
         },
         resource: {
           type: 'jwk',
-          id: MOCK_ISSUER_URL,
+          id: VC_ISSUER_URL,
         },
         action: {
           name: 'issuer',
@@ -200,26 +200,26 @@ test.describe('Never-Trusted Registry', () => {
 
 test.describe('Whitelist Registry - Key Binding Verification', () => {
   // These tests verify that the whitelist registry validates actual name-to-key bindings
-  // by fetching JWKS from mock services, not just checking identifiers.
+  // by fetching JWKS from VC services, not just checking identifiers.
 
   test('trusts whitelisted issuer with correct key', async () => {
     // Fetch the actual signing key from the mock issuer
-    const jwks = await fetchJWKS(MOCK_ISSUER_URL);
+    const jwks = await fetchJWKS(VC_ISSUER_URL);
     expect(jwks.keys.length).toBeGreaterThan(0);
     const issuerKey = jwks.keys[0];
 
     const ctx = await request.newContext();
     // Use the Docker-internal URL as subject.id since go-trust-whitelist resolves
-    // JWKS from inside Docker (mock-issuer:9000)
+    // JWKS from inside Docker (vc-issuer:9000)
     const response = await ctx.post(`${GO_TRUST_WHITELIST_URL}/evaluation`, {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
         },
         resource: {
           type: 'jwk',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
           key: [issuerKey],
         },
         action: {
@@ -276,11 +276,11 @@ test.describe('Whitelist Registry - Key Binding Verification', () => {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
         },
         resource: {
           type: 'jwk',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
           key: [fakeKey],
         },
         action: {
@@ -328,10 +328,10 @@ test.describe('Whitelist Registry - Key Binding Verification', () => {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
         },
         resource: {
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
         },
         action: {
           name: 'issuer',
@@ -377,11 +377,11 @@ test.describe('Whitelist Registry - Key Binding Verification', () => {
       data: {
         subject: {
           type: 'key',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
         },
         resource: {
           type: 'jwk',
-          id: MOCK_ISSUER_DOCKER_URL,
+          id: VC_ISSUER_DOCKER_URL,
           key: [verifierKey],
         },
         action: {

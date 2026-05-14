@@ -147,7 +147,7 @@ test.describe('Trust PDP Health', () => {
       // Use docker network hostname - go-trust runs in container and can't reach localhost
       const result = await evaluateTrust(
         'whitelist',
-        'http://mock-issuer:9000',
+        'http://vc-issuer:8080',
         'issue',
         CREDENTIAL_TYPES.PID_1_8
       );

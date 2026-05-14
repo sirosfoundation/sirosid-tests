@@ -289,7 +289,7 @@ test.describe('AuthZEN Backend Endpoints', () => {
       // Use the known issuer configured in go-trust whitelist
       const result = await evaluateTrust(
         'whitelist',
-        'http://mock-issuer:9000',
+        'http://vc-issuer:8080',
         'issue',
         CREDENTIAL_TYPES.PID_1_8
       );

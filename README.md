@@ -153,7 +153,7 @@ Tests the wallet against the official OpenID Foundation Conformance Suite:
 The conformance suite acts as a verifier (VP) or issuer (VCI) and validates that
 the wallet correctly implements the OpenID4VP and OpenID4VCI specifications.
 
-The VP test automatically pre-loads a PID credential from the mock issuer before
+The VP test automatically pre-loads a PID credential from the VC issuer before
 running the conformance modules.
 
 **Prerequisites:** Start the full conformance environment:
@@ -203,7 +203,7 @@ make test
 |---------|------|-------------|
 | wallet-frontend | 3000 | Web wallet UI |
 | wallet-backend | 8080/8081/8082 | Backend + Admin + Engine |
-| mock-issuer | 9000 | OpenID4VCI mock (instant credentials) |
+| vc-issuer | 9000 | OpenID4VCI mock (instant credentials) |
 | mock-verifier | 9001 | OpenID4VP mock |
 | mock-trust-pdp | 9091 | Always-allow trust mock |
 
@@ -322,11 +322,11 @@ make test
 
 ### Credential Flow Testing Against Remote Issuer/Verifier
 
-To test credential flows using a remote wallet but local mock issuer/verifier:
+To test credential flows using a remote wallet but local VC issuer/verifier:
 
 ```bash
 # Start local mock services only
-cd ../sirosid-dev && docker compose -f docker-compose.test.yml up -d mock-issuer mock-verifier mock-trust-pdp
+cd ../sirosid-dev && docker compose -f docker-compose.test.yml up -d vc-issuer mock-verifier mock-trust-pdp
 
 # Test against remote wallet with local mocks
 cd ../sirosid-tests
@@ -334,7 +334,7 @@ FRONTEND_URL=https://wallet.qa.siros.org \
 BACKEND_URL=https://api.qa.siros.org \
 ADMIN_URL=https://admin.qa.siros.org \
 ADMIN_TOKEN=<your-qa-admin-token> \
-MOCK_ISSUER_URL=http://localhost:9000 \
+VC_ISSUER_URL=http://localhost:9000 \
 MOCK_VERIFIER_URL=http://localhost:9001 \
 make test-credential
 ```
@@ -378,9 +378,9 @@ make test-credential
 
 | Variable | When Needed | Default | Description |
 |----------|-------------|---------|-------------|
-| `MOCK_ISSUER_URL` | Credential tests | `http://localhost:9000` | OpenID4VCI issuer |
+| `VC_ISSUER_URL` | Credential tests | `http://localhost:9000` | OpenID4VCI issuer |
 | `MOCK_VERIFIER_URL` | Credential tests | `http://localhost:9001` | OpenID4VP verifier |
-| `ISSUER_URL` | Alt for external | Same as MOCK_ISSUER_URL | External issuer URL |
+| `ISSUER_URL` | Alt for external | Same as VC_ISSUER_URL | External issuer URL |
 | `VERIFIER_URL` | Alt for external | Same as MOCK_VERIFIER_URL | External verifier URL |
 
 ### Trust and Registry
@@ -607,7 +607,7 @@ echo $FRONTEND_URL $BACKEND_URL $ADMIN_URL
 
 ### Remote wallet can't reach local mocks
 
-When testing remote wallet with local mock issuer/verifier, the wallet backend needs to reach your machine. Options:
+When testing remote wallet with local VC issuer/verifier, the wallet backend needs to reach your machine. Options:
 1. Use ngrok: `ngrok http 9000`
 2. Use a VPN if available
 3. Deploy mocks to a reachable host

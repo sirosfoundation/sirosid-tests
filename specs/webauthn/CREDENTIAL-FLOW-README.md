@@ -8,7 +8,7 @@ This directory contains end-to-end tests for the complete credential lifecycle:
 
 ### Mock Services
 
-The tests use mock issuer and verifier services that implement the full OID4VCI and OID4VP protocols:
+The tests use VC issuer and verifier services that implement the full OID4VCI and OID4VP protocols:
 
 - **Full Flow Issuer** (`mocks/issuer/full-flow-issuer.ts`): A complete OID4VCI credential issuer supporting:
   - Metadata endpoints (`.well-known/openid-credential-issuer`, `.well-known/oauth-authorization-server`)
@@ -54,8 +54,8 @@ The tests use mock issuer and verifier services that implement the full OID4VCI 
 In separate terminals:
 
 ```bash
-# Terminal 1: Start mock issuer (port 9000)
-npm run mock:issuer
+# Terminal 1: Start VC issuer (port 9000)
+npm run vc:issuer
 
 # Terminal 2: Start mock verifier (port 9001)
 npm run mock:verifier
@@ -63,7 +63,7 @@ npm run mock:verifier
 
 Or run them in the background:
 ```bash
-npm run mock:issuer &
+npm run vc:issuer &
 npm run mock:verifier &
 ```
 
@@ -85,10 +85,10 @@ npm run test:real-webauthn
 
 ## Test Flow
 
-1. **Setup**: Mock issuer and verifier start and generate ephemeral keys
+1. **Setup**: VC issuer and verifier start and generate ephemeral keys
 2. **User Registration**: New user registers with WebAuthn (soft-fido2 authenticator)
 3. **Credential Issuance**:
-   - Test requests a credential offer from mock issuer
+   - Test requests a credential offer from VC issuer
    - Wallet navigates to offer URL
    - Wallet exchanges pre-authorized code for access token
    - Wallet requests and stores SD-JWT credential
@@ -106,7 +106,7 @@ npm run test:real-webauthn
 | `FRONTEND_URL` | `http://localhost:3000` | Wallet frontend URL |
 | `BACKEND_URL` | `http://localhost:8080` | Wallet backend URL |
 | `ADMIN_URL` | `http://localhost:8081` | Admin API URL |
-| `ISSUER_URL` | `http://localhost:9000` | Mock issuer URL |
+| `ISSUER_URL` | `http://localhost:9000` | VC issuer URL |
 | `VERIFIER_URL` | `http://localhost:9001` | Mock verifier URL |
 | `SOFT_FIDO2_PATH` | - | Path to soft-fido2 binary |
 
@@ -147,7 +147,7 @@ curl http://localhost:9001/status/{request_id}
 
 ### Adding Authorization Code Flow Tests
 
-The mock issuer supports the full authorization code flow. To test:
+The VC issuer supports the full authorization code flow. To test:
 1. Navigate to the issuer's authorization endpoint
 2. Handle user authentication (currently auto-approves)
 3. Exchange authorization code for tokens

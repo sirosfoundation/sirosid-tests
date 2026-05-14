@@ -124,8 +124,8 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
           return;
         }
 
-        // Pre-load a PID credential from the mock issuer
-        console.log('Pre-loading PID credential from mock issuer...');
+        // Pre-load a PID credential from the VC issuer
+        console.log('Pre-loading PID credential from VC issuer...');
         const issueResult = await issueCredentialToWallet(page, CREDENTIAL_TYPES.PID_1_8);
         if (!issueResult.success) {
           console.log('Credential pre-loading failed:', issueResult.error);

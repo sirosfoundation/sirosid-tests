@@ -194,21 +194,21 @@ export class IssuerApiHelper {
   }
 
   /**
-   * Register the mock issuer (convenience method)
+   * Register the VC issuer (convenience method)
    */
-  async registerMockIssuer(tenantId: string = 'default', mockIssuerUrl: string = process.env.MOCK_ISSUER_URL || 'http://localhost:9000'): Promise<Issuer> {
+  async registerVcIssuer(tenantId: string = 'default', vcIssuerUrl: string = process.env.VC_ISSUER_URL || 'http://localhost:9000'): Promise<Issuer> {
     return this.ensureIssuer(tenantId, {
-      credential_issuer_identifier: mockIssuerUrl,
+      credential_issuer_identifier: vcIssuerUrl,
       client_id: 'wallet-e2e-test',
       visible: true,
     });
   }
 
   /**
-   * Unregister the mock issuer
+   * Unregister the VC issuer
    */
-  async unregisterMockIssuer(tenantId: string = 'default', mockIssuerUrl: string = process.env.MOCK_ISSUER_URL || 'http://localhost:9000'): Promise<boolean> {
-    return this.deleteIssuerByIdentifier(tenantId, mockIssuerUrl);
+  async unregisterVcIssuer(tenantId: string = 'default', vcIssuerUrl: string = process.env.VC_ISSUER_URL || 'http://localhost:9000'): Promise<boolean> {
+    return this.deleteIssuerByIdentifier(tenantId, vcIssuerUrl);
   }
 
   /**
