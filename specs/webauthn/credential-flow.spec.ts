@@ -45,9 +45,8 @@ async function registerUserViaUI(
   page: Page,
   options: { username: string; tenantId?: string }
 ): Promise<{ success: boolean; userId?: string; error?: string }> {
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');
@@ -179,9 +178,8 @@ async function loginUserViaUI(
   page: Page,
   options: { tenantId?: string; expectCachedUser?: boolean; cachedUserIndex?: number } = {}
 ): Promise<{ success: boolean; userId?: string; error?: string }> {
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');
@@ -598,7 +596,7 @@ test.describe('Full Credential Flow', () => {
     
     // Also test that login works immediately after registration (same context has cached user)
     // Navigate to login page to force re-auth
-    await page.goto(`${FRONTEND_URL}/login`);
+    await page.goto(`${FRONTEND_URL}/id/default/login`);
     await page.waitForLoadState('networkidle');
     
     // Should see cached user button since we just registered

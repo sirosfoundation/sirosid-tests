@@ -129,9 +129,8 @@ async function registerUserViaUI(
   page: Page,
   options: { username: string; tenantId?: string }
 ): Promise<{ success: boolean; userId?: string; error?: string }> {
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');

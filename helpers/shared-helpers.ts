@@ -137,9 +137,9 @@ export interface LoginOptions {
  * Navigate to the login page for a tenant
  */
 export async function navigateToLogin(page: Page, tenantId?: string): Promise<void> {
-  const loginUrl = tenantId
-    ? `${ENV.FRONTEND_URL}/id/${tenantId}/login`
-    : `${ENV.FRONTEND_URL}/login`;
+  // Multi-tenant mode requires a tenant prefix; default to 'default'
+  const effectiveTenantId = tenantId || 'default';
+  const loginUrl = `${ENV.FRONTEND_URL}/id/${effectiveTenantId}/login`;
   
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');

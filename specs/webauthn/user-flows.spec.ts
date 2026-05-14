@@ -112,9 +112,8 @@ async function registerUserViaUI(
   tenantId?: string;
   error?: string;
 }> {
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');
@@ -242,9 +241,8 @@ async function loginUserViaUI(
   success: boolean;
   error?: string;
 }> {
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');
@@ -343,9 +341,8 @@ webauthnTest.describe('CDP WebAuthn - User Registration Flow', () => {
     // but the browser context is fresh, so stored credentials may not work.
     // This test verifies the login flow UI works, even if actual login may fail.
     
-    const loginUrl = testTenantId
-      ? `${FRONTEND_URL}/id/${testTenantId}/login`
-      : `${FRONTEND_URL}/login`;
+    const effectiveTenantId = testTenantId || 'default';
+    const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
     await page.goto(loginUrl);
     await page.waitForLoadState('networkidle');
@@ -425,7 +422,7 @@ webauthnTest.describe('CDP WebAuthn - PRF Extension Verification', () => {
 webauthnTest.describe('CDP WebAuthn - Error Handling', () => {
   webauthnTest('should handle missing authenticator gracefully', async ({ page }) => {
     // Don't initialize WebAuthn helper - test error handling
-    await page.goto(`${FRONTEND_URL}/login`);
+    await page.goto(`${FRONTEND_URL}/id/default/login`);
     await page.waitForLoadState('networkidle');
     
     // Try to use WebAuthn without authenticator

@@ -9,30 +9,30 @@
  *
  * Transport Modes:
  *   TRANSPORT_MODE env var controls which transport to test:
- *   - 'auto': Use best available (WebSocket if supported, else HTTP)
- *   - 'websocket': Force WebSocket only (skip if unavailable)
- *   - 'http': Force HTTP only (even if WebSocket is available)
+ *   - 'websocket': WebSocket transport (default)
+ *   - 'http': HTTP proxy transport
+ *   - 'wmp': WMP JSON-RPC transport
  */
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const ENGINE_URL = process.env.ENGINE_URL || BACKEND_URL;
-const TRANSPORT_MODE = process.env.TRANSPORT_MODE || 'auto';
+const TRANSPORT_MODE = process.env.TRANSPORT_MODE || 'websocket';
 
 /**
  * Valid transport modes
  */
-export type TransportMode = 'auto' | 'websocket' | 'http';
+export type TransportMode = 'websocket' | 'http' | 'wmp';
 
 /**
  * Get configured transport mode
  */
 export function getTransportMode(): TransportMode {
   const mode = TRANSPORT_MODE.toLowerCase();
-  if (mode === 'websocket' || mode === 'http' || mode === 'auto') {
+  if (mode === 'websocket' || mode === 'http' || mode === 'wmp') {
     return mode;
   }
-  console.warn(`Invalid TRANSPORT_MODE '${TRANSPORT_MODE}', using 'auto'`);
-  return 'auto';
+  // 'auto' or unknown values default to websocket
+  return 'websocket';
 }
 
 /**
@@ -116,6 +116,20 @@ export async function isWebSocketAvailable(): Promise<boolean> {
 }
 
 /**
+ * Check if WMP transport is available
+ *
+ * WMP is available when the backend/engine reports 'wmp'
+ * in its capabilities array.
+ */
+export async function isWmpAvailable(): Promise<boolean> {
+  const status = await fetchEngineStatus();
+  if (!status) return false;
+
+  const capabilities = status.capabilities || [];
+  return capabilities.includes('wmp');
+}
+
+/**
  * Check API version
  *
  * Returns the API version from the backend, or 1 if not specified.
@@ -160,12 +174,16 @@ export function clearStatusCache(): void {
  */
 export async function getTransportDescription(): Promise<string> {
   const wsAvailable = await isWebSocketAvailable();
+  const wmpAvailable = await isWmpAvailable();
   const apiVersion = await getApiVersion();
   const mode = getTransportMode();
 
   const available: string[] = ['http'];
   if (wsAvailable) {
     available.unshift('websocket');
+  }
+  if (wmpAvailable) {
+    available.push('wmp');
   }
 
   return `API v${apiVersion}, available: [${available.join(', ')}], mode: ${mode}`;
@@ -183,9 +201,8 @@ export function getViteTransportPreference(): string {
       return 'websocket';
     case 'http':
       return 'http';
-    case 'auto':
-    default:
-      return 'websocket,http';
+    case 'wmp':
+      return 'wmp';
   }
 }
 
@@ -204,6 +221,7 @@ export async function validateTransportMode(): Promise<{
 }> {
   const mode = getTransportMode();
   const wsAvailable = await isWebSocketAvailable();
+  const wmpAvailable = await isWmpAvailable();
 
   switch (mode) {
     case 'websocket':
@@ -216,27 +234,29 @@ export async function validateTransportMode(): Promise<{
       }
       return {
         canRun: true,
-        reason: 'Using WebSocket transport (forced)',
+        reason: 'Using WebSocket transport',
         effectiveTransport: 'websocket',
+      };
+
+    case 'wmp':
+      if (!wmpAvailable) {
+        return {
+          canRun: false,
+          reason: 'WMP mode requested but backend does not support WMP',
+          effectiveTransport: 'none',
+        };
+      }
+      return {
+        canRun: true,
+        reason: 'Using WMP transport',
+        effectiveTransport: 'wmp',
       };
 
     case 'http':
       return {
         canRun: true,
-        reason: wsAvailable
-          ? 'Using HTTP transport (forced, WebSocket available but not used)'
-          : 'Using HTTP transport',
+        reason: 'Using HTTP transport',
         effectiveTransport: 'http',
-      };
-
-    case 'auto':
-    default:
-      return {
-        canRun: true,
-        reason: wsAvailable
-          ? 'Using WebSocket transport (auto-detected)'
-          : 'Using HTTP transport (WebSocket not available)',
-        effectiveTransport: wsAvailable ? 'websocket' : 'http',
       };
   }
 }
@@ -248,10 +268,13 @@ export async function validateTransportMode(): Promise<{
  */
 export async function getAvailableTransportModes(): Promise<TransportMode[]> {
   const wsAvailable = await isWebSocketAvailable();
+  const wmpAvailable = await isWmpAvailable();
   const modes: TransportMode[] = ['http'];
   if (wsAvailable) {
     modes.unshift('websocket');
-    modes.push('auto');
+  }
+  if (wmpAvailable) {
+    modes.push('wmp');
   }
   return modes;
 }

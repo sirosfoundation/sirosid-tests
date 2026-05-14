@@ -17,3 +17,5 @@ Thumbs.db
 
 # Logs
 *.log
+playwright-report-ci/
+test-results-ci/

@@ -523,7 +523,7 @@ export function defineDefaultTenantFlowTests(
       }
 
       // Step 2: Navigate to login page
-      await page.goto(`${ENV.FRONTEND_URL}/login`);
+      await page.goto(`${ENV.FRONTEND_URL}/id/default/login`);
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 

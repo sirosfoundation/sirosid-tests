@@ -19,6 +19,7 @@ import {
 import {
   fetchBackendStatus,
   isWebSocketAvailable,
+  isWmpAvailable,
   getTransportDescription,
   clearStatusCache,
 } from '../../helpers/backend-capabilities';
@@ -44,6 +45,7 @@ export function defineBackendCapabilitiesTests(
       expect(status?.status).toBe('ok');
 
       const wsAvailable = await isWebSocketAvailable();
+      const wmpAvailable = await isWmpAvailable();
       const transportDesc = await getTransportDescription();
 
       console.log(`[${info.name}] Backend Capabilities:`);
@@ -52,6 +54,7 @@ export function defineBackendCapabilitiesTests(
       console.log(`  API version: ${status?.api_version || 1}`);
       console.log(`  Transport: ${transportDesc}`);
       console.log(`  WebSocket available: ${wsAvailable}`);
+      console.log(`  WMP available: ${wmpAvailable}`);
       console.log(`  Capabilities: ${(status?.capabilities || []).join(', ') || 'none'}`);
     });
 

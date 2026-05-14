@@ -97,10 +97,9 @@ export async function registerUserViaUI(
   options: RegisterOptions
 ): Promise<RegisterResult> {
   // Navigate to the correct login/signup page
-  // Default tenant uses root paths, custom tenants use /id/ prefix
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  // Multi-tenant mode requires tenant prefix; default to 'default'
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');
@@ -276,10 +275,9 @@ export async function loginUserViaUI(
   options: LoginOptions = {}
 ): Promise<LoginResult> {
   // Navigate to the correct login page
-  // Default tenant uses root paths, custom tenants use /id/ prefix
-  const loginUrl = options.tenantId
-    ? `${FRONTEND_URL}/id/${options.tenantId}/login`
-    : `${FRONTEND_URL}/login`;
+  // Multi-tenant mode requires tenant prefix; default to 'default'
+  const effectiveTenantId = options.tenantId || 'default';
+  const loginUrl = `${FRONTEND_URL}/id/${effectiveTenantId}/login`;
 
   await page.goto(loginUrl);
   await page.waitForLoadState('networkidle');

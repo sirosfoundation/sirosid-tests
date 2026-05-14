@@ -2,11 +2,12 @@
  * Shared Transport Mode Test Definitions
  * 
  * These tests verify transport-specific behavior across WebSocket,
- * HTTP proxy, and (future) direct transport modes.
+ * HTTP proxy, WMP, and (future) direct transport modes.
  * 
  * Environment Variables:
- *   TRANSPORT_MODE=auto|websocket|http - Controls which transport to test
+ *   TRANSPORT_MODE=websocket|http|wmp - Controls which transport to test (default: websocket)
  *   EXPECT_WEBSOCKET=true - Fail if WebSocket not available
+ *   EXPECT_WMP=true - Fail if WMP not available
  */
 
 import { expect, request } from '@playwright/test';
@@ -15,6 +16,7 @@ import type { WebAuthnAdapterInfo, WebAuthnFixtures } from '../../helpers/webaut
 import {
   fetchBackendStatus,
   isWebSocketAvailable,
+  isWmpAvailable,
   getTransportDescription,
   getTransportMode,
   clearStatusCache,
@@ -34,6 +36,13 @@ const ENGINE_URL = process.env.ENGINE_URL || BACKEND_URL;
  */
 function expectWebSocket(): boolean {
   return process.env.EXPECT_WEBSOCKET === 'true';
+}
+
+/**
+ * Check if we should expect WMP to be available
+ */
+function expectWmp(): boolean {
+  return process.env.EXPECT_WMP === 'true';
 }
 
 // =============================================================================
@@ -84,6 +93,23 @@ export function defineTransportCapabilityTests(
       }
     });
 
+    test('backend reports WMP capability', async () => {
+      const info = adapterInfo();
+      const status = await fetchBackendStatus(true);
+
+      if (!status) {
+        test.skip(true, 'Backend not available');
+        return;
+      }
+
+      const hasWmp = status.capabilities?.includes('wmp') ?? false;
+      console.log(`[${info.name}] WMP capability: ${hasWmp}`);
+
+      if (expectWmp() && !hasWmp) {
+        test.fail(true, 'WMP expected but not available');
+      }
+    });
+
     test('engine status endpoint is available', async () => {
       const info = adapterInfo();
       
@@ -110,7 +136,7 @@ export function defineTransportCapabilityTests(
       const info = adapterInfo();
       const mode = getTransportMode();
 
-      expect(['auto', 'websocket', 'http']).toContain(mode);
+      expect(['websocket', 'http', 'wmp']).toContain(mode);
       console.log(`[${info.name}] Transport mode: ${mode}`);
     });
 
@@ -228,6 +254,71 @@ export function defineWebSocketTransportTests(
 }
 
 // =============================================================================
+// WMP Transport Tests
+// =============================================================================
+
+/**
+ * Define WMP-specific transport tests
+ */
+export function defineWmpTransportTests(
+  test: TestType<PlaywrightTestArgs & PlaywrightTestOptions & WebAuthnFixtures, {}>,
+  adapterInfo: () => WebAuthnAdapterInfo
+) {
+  test.describe('WMP Transport @wmp', () => {
+    test('WMP capability is reported', async () => {
+      const info = adapterInfo();
+      const wmpAvailable = await isWmpAvailable();
+
+      console.log(`[${info.name}] WMP available: ${wmpAvailable}`);
+
+      if (expectWmp() && !wmpAvailable) {
+        test.fail(true, 'WMP expected but not available');
+      }
+
+      if (!wmpAvailable) {
+        test.skip(true, 'WMP not available');
+      }
+    });
+
+    test('WMP RPC endpoint is reachable', async ({ request: reqContext }) => {
+      const info = adapterInfo();
+      const wmpAvailable = await isWmpAvailable();
+
+      if (!wmpAvailable) {
+        test.skip(true, 'WMP not available');
+        return;
+      }
+
+      // POST to /api/v2/wallet/rpc without auth should return 401
+      const response = await reqContext.post(`${ENGINE_URL}/api/v2/wallet/rpc`, {
+        data: { jsonrpc: '2.0', method: 'wmp.session.create', id: 1, params: {} },
+      }).catch(() => null);
+
+      const reachable = response && [200, 401, 403].includes(response.status());
+      console.log(`[${info.name}] WMP RPC endpoint: ${reachable ? 'reachable' : 'not found'} (status: ${response?.status()})`);
+      expect(reachable).toBeTruthy();
+    });
+
+    test('WMP events endpoint is reachable', async ({ request: reqContext }) => {
+      const info = adapterInfo();
+      const wmpAvailable = await isWmpAvailable();
+
+      if (!wmpAvailable) {
+        test.skip(true, 'WMP not available');
+        return;
+      }
+
+      // GET /api/v2/wallet/events without session_id should return 400
+      const response = await reqContext.get(`${ENGINE_URL}/api/v2/wallet/events`).catch(() => null);
+
+      const reachable = response && [200, 400, 401].includes(response.status());
+      console.log(`[${info.name}] WMP events endpoint: ${reachable ? 'reachable' : 'not found'} (status: ${response?.status()})`);
+      expect(reachable).toBeTruthy();
+    });
+  });
+}
+
+// =============================================================================
 // HTTP Proxy Transport Tests
 // =============================================================================
 
@@ -262,8 +353,8 @@ export function defineHttpTransportTests(
       const info = adapterInfo();
       const mode = getTransportMode();
 
-      if (mode !== 'auto') {
-        console.log(`[${info.name}] Transport mode is ${mode}, not testing fallback`);
+      if (mode !== 'http') {
+        console.log(`[${info.name}] Transport mode is ${mode}, not testing HTTP fallback`);
         test.skip();
         return;
       }
@@ -327,28 +418,6 @@ export function defineTransportSwitchingTests(
       expect(status).toBeDefined();
       console.log(`[${info.name}] HTTP transport forced, backend available: ${!!status}`);
     });
-
-    test('TRANSPORT_MODE=auto selects best available', async () => {
-      const info = adapterInfo();
-      const mode = getTransportMode();
-
-      if (mode !== 'auto') {
-        console.log(`[${info.name}] TRANSPORT_MODE is ${mode}, skipping auto test`);
-        test.skip();
-        return;
-      }
-
-      const wsAvailable = await isWebSocketAvailable();
-      const description = await getTransportDescription();
-
-      console.log(`[${info.name}] Auto mode selected: ${description}`);
-      
-      if (wsAvailable) {
-        expect(description.toLowerCase()).toContain('websocket');
-      } else {
-        expect(description.toLowerCase()).toContain('http');
-      }
-    });
   });
 }
 
@@ -389,6 +458,7 @@ export function defineAllTransportTests(
 ) {
   defineTransportCapabilityTests(test, adapterInfo);
   defineWebSocketTransportTests(test, adapterInfo);
+  defineWmpTransportTests(test, adapterInfo);
   defineHttpTransportTests(test, adapterInfo);
   defineTransportSwitchingTests(test, adapterInfo);
   defineTransportPerformanceTests(test, adapterInfo);

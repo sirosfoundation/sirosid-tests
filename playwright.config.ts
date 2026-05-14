@@ -8,23 +8,25 @@ import { defineConfig, devices } from '@playwright/test';
  * - BACKEND_URL: URL of the go-wallet-backend (default: http://localhost:8080)
  * - ENGINE_URL: URL of the wallet engine for WebSocket (defaults to BACKEND_URL)
  * - ADMIN_URL: URL of the go-wallet-backend admin API (default: http://localhost:8081)
- * - TRANSPORT_MODE: Transport to test - 'auto' | 'websocket' | 'http' (default: auto)
+ * - TRANSPORT_MODE: Transport to test - 'websocket' | 'http' | 'wmp' (default: websocket)
  * - START_SERVERS: Set to 'true' to auto-start both servers (default: false)
  * - FRONTEND_PATH: Path to wallet-frontend repo (for auto-start)
  * - BACKEND_PATH: Path to go-wallet-backend repo (for auto-start)
  *
  * Transport modes:
- *   - auto: Use best available (WebSocket if supported, else HTTP)
- *   - websocket: Force WebSocket only (tests skip if unavailable)
- *   - http: Force HTTP only (even if WebSocket is available)
+ *   - websocket: WebSocket transport (default)
+ *   - http: HTTP proxy transport
+ *   - wmp: WMP JSON-RPC transport
  *
  * Running with specific transport:
  *   TRANSPORT_MODE=http npm test
  *   TRANSPORT_MODE=websocket npm test
+ *   TRANSPORT_MODE=wmp npm test
  *   make test-http
  *   make test-ws
+ *   make test-wmp
  *
- * Running all transport modes:
+ * Running all transports:
  *   make test-all-transports
  *
  * Example usage:
@@ -39,7 +41,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const ENGINE_URL = process.env.ENGINE_URL || BACKEND_URL;
 const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:8081';
-const TRANSPORT_MODE = process.env.TRANSPORT_MODE || 'auto';
+const TRANSPORT_MODE = process.env.TRANSPORT_MODE || 'websocket';
 const START_SERVERS = process.env.START_SERVERS === 'true';
 const FRONTEND_PATH = process.env.FRONTEND_PATH || '../wallet-frontend';
 const BACKEND_PATH = process.env.BACKEND_PATH || '../go-wallet-backend';
@@ -51,9 +53,10 @@ function getViteTransportPreference(mode: string): string {
       return 'websocket';
     case 'http':
       return 'http';
-    case 'auto':
+    case 'wmp':
+      return 'wmp';
     default:
-      return 'websocket,http';
+      return 'websocket';
   }
 }
 
@@ -113,11 +116,11 @@ export default defineConfig({
       metadata: { transportMode: 'websocket' },
     },
     {
-      name: 'chromium-auto',
+      name: 'chromium-wmp',
       use: {
         ...devices['Desktop Chrome'],
       },
-      metadata: { transportMode: 'auto' },
+      metadata: { transportMode: 'wmp' },
     },
   ],
 

@@ -23,8 +23,9 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:8081';
 
 export default defineConfig({
-  // Only run webauthn-ci tests
-  testDir: './specs/webauthn-ci',
+  // Only run CDP-compatible tests (shared tests + user-flows)
+  testDir: './specs/webauthn',
+  testMatch: ['shared-tests.spec.ts', 'user-flows.spec.ts'],
   
   // Serial execution for WebAuthn consistency
   fullyParallel: false,

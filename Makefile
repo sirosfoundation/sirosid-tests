@@ -13,7 +13,7 @@
 
 .PHONY: help install test test-public test-admin test-webauthn \
         test-ci test-soft-fido2 test-vc test-vc-issuance test-vc-verification \
-        test-vc-trust test-vc-e2e test-http test-websocket test-all-transports \
+        test-vc-trust test-vc-e2e test-http test-websocket test-wmp test-all-transports \
         lint clean
 
 # =============================================================================
@@ -47,8 +47,8 @@ GO_TRUST_ALLOW_URL ?= http://localhost:9095
 GO_TRUST_WHITELIST_URL ?= http://localhost:9096
 GO_TRUST_DENY_URL ?= http://localhost:9097
 
-# Transport mode: auto | http | websocket
-TRANSPORT_MODE ?= auto
+# Transport mode: http | websocket | wmp (default: websocket)
+TRANSPORT_MODE ?= websocket
 
 # Common environment for test execution
 TEST_ENV := FRONTEND_URL=$(FRONTEND_URL) \
@@ -96,6 +96,7 @@ help: ## Show this help
 	@echo "$(GREEN)Transport-Specific Tests:$(NC)"
 	@echo "  make test-http         # Tests with HTTP transport only"
 	@echo "  make test-websocket    # Tests with WebSocket transport only"
+	@echo "  make test-wmp          # Tests with WMP transport only"
 	@echo "  make test-all-transports  # Run tests with all transports"
 	@echo ""
 	@echo "$(GREEN)VC Services Tests (Production-like):$(NC)"
@@ -177,6 +178,12 @@ test-websocket: install ## Run tests with WebSocket transport only
 	@echo "  Engine: $(ENGINE_URL)"
 	$(TEST_ENV) TRANSPORT_MODE=websocket npx playwright test --project=chromium-websocket
 
+test-wmp: install ## Run tests with WMP transport only
+	@echo "$(GREEN)Running tests with WMP transport...$(NC)"
+	@echo "  Target: $(FRONTEND_URL)"
+	@echo "  Engine: $(ENGINE_URL)"
+	$(TEST_ENV) TRANSPORT_MODE=wmp npx playwright test --project=chromium-wmp
+
 test-all-transports: install ## Run tests with all supported transports
 	@echo "$(GREEN)Running tests with ALL transports...$(NC)"
 	@echo ""
@@ -185,6 +192,9 @@ test-all-transports: install ## Run tests with all supported transports
 	@echo ""
 	@echo "$(YELLOW)=== WebSocket Transport ===$(NC)"
 	$(TEST_ENV) TRANSPORT_MODE=websocket npx playwright test --project=chromium-websocket || true
+	@echo ""
+	@echo "$(YELLOW)=== WMP Transport ===$(NC)"
+	$(TEST_ENV) TRANSPORT_MODE=wmp npx playwright test --project=chromium-wmp || true
 	@echo ""
 	@echo "$(GREEN)All transport tests complete.$(NC)"
 
