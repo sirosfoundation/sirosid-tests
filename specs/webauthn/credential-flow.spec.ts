@@ -702,8 +702,11 @@ mockServiceTest.describe('VC Issuer/Verifier Services', () => {
   mockServiceTest('obtain credential via OpenID4VCI (pre-authorized)', async ({ page, request }) => {
     test.skip(!issuerAvailable, `VC issuer not running at ${ISSUER_URL}`);
 
-    // Check if issuer has credential offer endpoint (VC services use /api/credential-offer)
-    const metadataCheck = await request.get(`${ISSUER_URL}/.well-known/openid-credential-issuer`).catch(() => null);
+    // The VC API Gateway serves the OpenID credential issuer metadata
+    const apigwUrl = process.env.VC_APIGW_URL || 'http://localhost:9003';
+
+    // Check if issuer has credential metadata endpoint
+    const metadataCheck = await request.get(`${apigwUrl}/.well-known/openid-credential-issuer`).catch(() => null);
     if (!metadataCheck || !metadataCheck.ok()) {
       test.skip(true, 'Issuer metadata not available');
     }
@@ -725,24 +728,36 @@ mockServiceTest.describe('VC Issuer/Verifier Services', () => {
     await page.waitForTimeout(3000);
 
     // Get a credential offer from the VC issuer
-    // The VC issuer serves .well-known/openid-credential-issuer with credential_offer_uri
-    const offerResponse = await request.get(`${ISSUER_URL}/.well-known/openid-credential-issuer`);
+    // The VC API Gateway serves .well-known/openid-credential-issuer
+    const offerResponse = await request.get(`${apigwUrl}/.well-known/openid-credential-issuer`);
     expect(offerResponse.ok()).toBe(true);
     const metadata = await offerResponse.json();
     
     // Use the first available credential configuration to construct an offer
     // For pre-authorized flow, the VC apigw provides /offers/:scope/:walletId
-    const apigwUrl = process.env.VC_APIGW_URL || 'http://localhost:9003';
-    const offerApiResponse = await request.get(`${apigwUrl}/offers/default/local`).catch(() => null);
+    // Pick the first available credential configuration scope
+    const configIds = Object.keys(metadata.credential_configurations_supported || {});
+    const scope = configIds[0] || 'pid_1_8';
+    console.log(`Using credential scope: ${scope} (available: ${configIds.join(', ')})`);
+    const offerApiResponse = await request.get(`${apigwUrl}/offers/${scope}/local`).catch(() => null);
     if (!offerApiResponse || !offerApiResponse.ok()) {
-      test.skip(true, 'VC API Gateway not available for credential offers');
+      const errText = await offerApiResponse?.text().catch(() => 'no response');
+      test.skip(true, `VC API Gateway not available for credential offers: ${errText}`);
     }
     const offerData = await offerApiResponse!.json();
-    const credentialOfferUri = offerData.qr?.uri;
-    expect(credentialOfferUri).toBeDefined();
-    console.log('Got credential offer URI:', credentialOfferUri);
+    const qrUri = offerData.qr?.uri;
+    expect(qrUri).toBeDefined();
+    console.log('Got credential offer QR URI:', qrUri);
 
-    const walletOfferUrl = `${FRONTEND_URL}/?credential_offer_uri=${encodeURIComponent(credentialOfferUri)}`;
+    // The QR URI from apigw is: http://localhost:3000/cb?credential_offer={...}
+    // Extract the credential_offer parameter and construct the wallet URL
+    const qrUrl = new URL(qrUri);
+    const credentialOffer = qrUrl.searchParams.get('credential_offer');
+    expect(credentialOffer).toBeTruthy();
+
+    // Navigate wallet to the offer (use the frontend's tenant path)
+    const walletOfferUrl = `${FRONTEND_URL}/id/default/cb?credential_offer=${encodeURIComponent(credentialOffer!)}`;
+    console.log('Navigating wallet to:', walletOfferUrl.substring(0, 120) + '...');
     const issueResult = await acceptCredentialOffer(page, walletOfferUrl);
     expect(issueResult.success).toBe(true);
     console.log('Credential obtained successfully');

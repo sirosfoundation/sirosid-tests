@@ -25,11 +25,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { ConformanceAPI, type TestState } from '../../helpers/conformance-api';
-import { presentCredential, convertToWalletCallbackUrl, issueCredentialToWallet, isVCServicesAvailable } from '../../helpers/wallet-automation';
+import { issueCredentialToWallet, isVCServicesAvailable } from '../../helpers/wallet-automation';
 import { loginUserViaUI } from '../../helpers/ui-actions';
 import { ENV } from '../../helpers/shared-helpers';
-import { isSoftFidoAvailable } from '../../helpers/softfido';
 import { CREDENTIAL_TYPES } from '../../helpers/vc-services';
+import { WebAuthnHelper } from '../../helpers/webauthn';
 
 // =============================================================================
 // Configuration
@@ -41,12 +41,13 @@ const FRONTEND_URL = ENV.FRONTEND_URL;
 /** OID4VP test plan variants to run */
 const VP_VARIANTS = [
   {
-    name: 'sd_jwt_vc / x509_san_dns / direct_post / request_uri_signed',
+    name: 'sd_jwt_vc / x509_san_dns / direct_post / request_uri_signed / plain_vp',
     variant: {
       credential_format: 'sd_jwt_vc',
       client_id_prefix: 'x509_san_dns',
       response_mode: 'direct_post',
       request_method: 'request_uri_signed',
+      vp_profile: 'plain_vp',
     },
   },
 ];
@@ -63,17 +64,9 @@ const VP_CONFIG_PATH = path.resolve(__dirname, '../../configs/conformance/vp-wal
 
 test.describe('OID4VP Wallet Conformance Suite', () => {
   const api = new ConformanceAPI(CONFORMANCE_URL);
-  let softFidoAvailable: boolean;
   let conformanceReady: boolean;
 
   test.beforeAll(async () => {
-    // Check soft-fido2 availability
-    softFidoAvailable = isSoftFidoAvailable();
-    if (!softFidoAvailable) {
-      console.log('soft-fido2 not available, tests will be skipped');
-      return;
-    }
-
     // Check conformance suite availability
     try {
       await api.waitForServerReady(30000);
@@ -86,10 +79,6 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
   });
 
   test.beforeEach(async () => {
-    if (!softFidoAvailable) {
-      test.skip(true, 'soft-fido2 not available');
-      return;
-    }
     if (!conformanceReady) {
       test.skip(true, 'Conformance suite not available');
       return;
@@ -104,7 +93,7 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
     let credentialLoaded = false;
 
     test.beforeAll(async ({ browser, tenantContext }) => {
-      if (!softFidoAvailable || !conformanceReady) return;
+      if (!conformanceReady) return;
       if (!tenantContext.ready) return;
 
       // Check VC services availability for credential pre-loading
@@ -115,13 +104,45 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
         return;
       }
 
-      // Login and pre-load credential
+      // Login and pre-load credential using CDP Virtual Authenticator
       const page = await browser.newPage();
       try {
+        // Set up CDP Virtual Authenticator (replaces soft-fido2)
+        const webauthn = new WebAuthnHelper(page);
+        await webauthn.initialize();
+        await webauthn.injectPrfMock();
+        await webauthn.addPlatformAuthenticator();
+        if (tenantContext.credentials) {
+          for (const cred of tenantContext.credentials) {
+            await webauthn.addCredential(cred);
+          }
+        }
+
         const loginResult = await loginUserViaUI(page, { tenantId: tenantContext.tenantId });
         if (!loginResult.success) {
           console.log('Login failed for credential pre-loading:', loginResult.error);
           return;
+        }
+
+        // Wait for login to complete
+        await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(3000);
+
+        // Handle PRF retry if needed
+        if (page.url().includes('/login')) {
+          const continueBtn = page.locator('button:has-text("Continue")');
+          if (await continueBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await continueBtn.click();
+            await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 });
+            await page.waitForTimeout(2000);
+          }
+        }
+
+        // Dismiss welcome tour if shown
+        const dismissBtn = page.locator('button:has-text("Dismiss")');
+        if (await dismissBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await dismissBtn.click();
+          await page.waitForTimeout(1000);
         }
 
         // Pre-load a PID credential from the VC issuer
@@ -192,9 +213,41 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
             return;
           }
 
+          // Set up CDP Virtual Authenticator for headless WebAuthn
+          const webauthn = new WebAuthnHelper(page);
+          await webauthn.initialize();
+          await webauthn.injectPrfMock();
+          await webauthn.addPlatformAuthenticator();
+          if (tenantContext.credentials) {
+            for (const cred of tenantContext.credentials) {
+              await webauthn.addCredential(cred);
+            }
+          }
+
           // Login the user
           const loginResult = await loginUserViaUI(page, { tenantId: tenantContext.tenantId });
           expect(loginResult.success).toBe(true);
+
+          // Wait for login to complete
+          await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 }).catch(() => {});
+          await page.waitForTimeout(3000);
+
+          // Handle PRF retry if needed
+          if (page.url().includes('/login')) {
+            const continueBtn = page.locator('button:has-text("Continue")');
+            if (await continueBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+              await continueBtn.click();
+              await page.waitForURL((url) => !url.toString().includes('/login'), { timeout: 15000 });
+              await page.waitForTimeout(2000);
+            }
+          }
+
+          // Dismiss welcome tour if shown
+          const welcomeDismiss = page.locator('button:has-text("Dismiss")');
+          if (await welcomeDismiss.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await welcomeDismiss.click();
+            await page.waitForTimeout(1000);
+          }
 
           const results: Array<{
             module: string;
@@ -241,9 +294,11 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
             }
 
             // Module is WAITING - get the wallet interaction URL
-            const interactionUrl = await api.getWalletInteractionUrl(moduleId);
+            let interactionUrl = await api.getWalletInteractionUrl(moduleId);
             if (!interactionUrl) {
-              // Try browser interaction URL as fallback
+              // Try browser interaction URL — the conformance suite's /authorize
+              // endpoint redirects to openid4vp:// which Playwright can't follow.
+              // Intercept the redirect to extract the openid4vp:// URL.
               const browserUrl = await api.getBrowserInteractionUrl(moduleId);
               if (!browserUrl) {
                 console.log(`Module ${moduleName}: no interaction URL found`);
@@ -255,17 +310,82 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
                 });
                 continue;
               }
-              // Navigate to the browser interaction URL, which should redirect
-              // to the wallet with the proper params
-              console.log(`Module ${moduleName}: using browser URL: ${browserUrl}`);
-              await page.goto(browserUrl, { waitUntil: 'networkidle', timeout: 15000 });
-            } else {
-              // Drive the wallet to present the credential
-              console.log(`Module ${moduleName}: presenting credential via ${interactionUrl.slice(0, 80)}...`);
-              const vpResult = await presentCredential(page, interactionUrl);
 
-              if (!vpResult.success) {
-                console.log(`Module ${moduleName}: wallet VP failed: ${vpResult.error}`);
+              // Fetch the /authorize endpoint directly to capture the redirect
+              console.log(`Module ${moduleName}: fetching redirect from ${browserUrl}`);
+              try {
+                const response = await page.request.fetch(browserUrl, {
+                  maxRedirects: 0,
+                  ignoreHTTPSErrors: true,
+                });
+                const location = response.headers()['location'];
+                if (location && (location.startsWith('openid4vp://') || location.includes('request_uri='))) {
+                  interactionUrl = location;
+                  console.log(`Module ${moduleName}: captured redirect to ${interactionUrl.slice(0, 100)}...`);
+                } else {
+                  console.log(`Module ${moduleName}: no openid4vp redirect found (status=${response.status()}, location=${location || 'none'})`);
+                  // Fall through to navigate directly
+                  await page.goto(browserUrl, { waitUntil: 'networkidle', timeout: 15000 });
+                }
+              } catch (fetchErr) {
+                console.log(`Module ${moduleName}: failed to fetch redirect: ${(fetchErr as Error).message}`);
+                await page.goto(browserUrl, { waitUntil: 'networkidle', timeout: 15000 });
+              }
+            }
+
+            if (interactionUrl) {
+              // Drive the wallet to present the credential via SPA navigation
+              // (full page.goto would tear down the WebSocket session)
+              console.log(`Module ${moduleName}: presenting credential via ${interactionUrl.slice(0, 80)}...`);
+
+              // Extract params from openid4vp:// URL
+              const vpParams = interactionUrl.replace('openid4vp://?', '');
+              const tenantBasePath = `/id/${tenantContext.tenantId}/`;
+
+              // SPA navigation: pushState to trigger UriHandlerProvider
+              await page.evaluate(({ basePath, params }) => {
+                window.history.pushState(null, '', `${basePath}?${params}`);
+                window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+              }, { basePath: tenantBasePath, params: vpParams });
+
+              // Wait for the wallet to navigate to /cb and process the VP request
+              try {
+                await page.waitForURL((url) => url.pathname.includes('/cb'), { timeout: 10000 });
+              } catch {
+                console.log(`Module ${moduleName}: SPA navigation to /cb timed out`);
+              }
+
+              // Wait for VP flow to complete
+              await page.waitForTimeout(5000);
+
+              // Check for credential selection screen
+              const nextBtn = page.locator('#next-select-credentials');
+              if (await nextBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+                console.log(`Module ${moduleName}: credential selection visible, proceeding...`);
+                await nextBtn.click();
+                await page.waitForTimeout(1000);
+
+                // Select first credential
+                const credCards = page.locator('[id^="slider-select-credentials-"]');
+                const cardCount = await credCards.count();
+                if (cardCount > 0) {
+                  await credCards.first().click();
+                  await page.waitForTimeout(500);
+                  if (await nextBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                    await nextBtn.click();
+                    await page.waitForTimeout(1000);
+                  }
+                }
+
+                // Click Send
+                const sendBtn = page.locator('#send-select-credentials');
+                if (await sendBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                  await sendBtn.click();
+                  await page.waitForTimeout(3000);
+                }
+              } else {
+                const bodyText = await page.locator('body').innerText({ timeout: 3000 }).catch(() => '(no body text)');
+                console.log(`Module ${moduleName}: wallet VP failed: ${bodyText.slice(0, 200)}`);
               }
             }
 

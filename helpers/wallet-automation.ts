@@ -197,18 +197,19 @@ export async function presentCredential(
   options: {
     credentialIndex?: number;
     timeoutMs?: number;
+    tenantId?: string;
   } = {}
 ): Promise<{ success: boolean; error?: string }> {
-  const { credentialIndex = 0, timeoutMs = 30000 } = options;
+  const { credentialIndex = 0, timeoutMs = 30000, tenantId } = options;
 
   try {
     // Convert to wallet callback URL
-    const walletUrl = convertToWalletCallbackUrl(requestUrl);
+    const walletUrl = convertToWalletCallbackUrl(requestUrl, tenantId);
     console.log(`[WalletAutomation] Navigating to VP request: ${walletUrl.slice(0, 100)}...`);
 
     // Navigate to the VP request
     await page.goto(walletUrl, { waitUntil: 'networkidle', timeout: timeoutMs });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(5000);
 
     // Check for "Insufficient Credentials" error
     const insufficientError = page.locator('text=Insufficient Credentials');
@@ -289,7 +290,9 @@ export async function presentCredential(
  * - https://...?credential_offer_uri=...
  * - A URL with client_id and request_uri params
  */
-export function convertToWalletCallbackUrl(url: string): string {
+export function convertToWalletCallbackUrl(url: string, tenantId?: string): string {
+  const base = tenantId ? `${FRONTEND_URL}/id/${tenantId}` : FRONTEND_URL;
+
   // If it's already a wallet URL, return as-is
   if (url.startsWith(FRONTEND_URL)) {
     return url;
@@ -298,13 +301,13 @@ export function convertToWalletCallbackUrl(url: string): string {
   // Handle openid-credential-offer:// scheme
   if (url.startsWith('openid-credential-offer://')) {
     const params = url.replace('openid-credential-offer://?', '');
-    return `${FRONTEND_URL}/cb?${params}`;
+    return `${base}/cb?${params}`;
   }
 
   // Handle openid4vp:// scheme
   if (url.startsWith('openid4vp://')) {
     const params = url.replace('openid4vp://?', '');
-    return `${FRONTEND_URL}/cb?${params}`;
+    return `${base}/cb?${params}`;
   }
 
   // For https:// URLs from the conformance suite, extract the query params
@@ -315,16 +318,16 @@ export function convertToWalletCallbackUrl(url: string): string {
 
     // Credential offer
     if (params.has('credential_offer') || params.has('credential_offer_uri')) {
-      return `${FRONTEND_URL}/cb?${params.toString()}`;
+      return `${base}/cb?${params.toString()}`;
     }
 
     // VP request
     if (params.has('client_id') && params.has('request_uri')) {
-      return `${FRONTEND_URL}/cb?${params.toString()}`;
+      return `${base}/cb?${params.toString()}`;
     }
 
     // Fallback: just redirect the full URL through /cb
-    return `${FRONTEND_URL}/cb?${params.toString()}`;
+    return `${base}/cb?${params.toString()}`;
   } catch {
     // If URL parsing fails, try to use it as-is
     return url;

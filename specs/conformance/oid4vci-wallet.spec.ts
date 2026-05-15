@@ -143,8 +143,10 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
           const conformanceIssuerUrl = CONFORMANCE_URL.replace(/\/$/, '') + '/test/a/' + (configJson.alias || 'siros-wallet-vci-test') + '/';
 
           // Extract the client private key JWK for private_key_jwt authentication
-          // The client.jwks.keys[0] in the config contains the private key (has 'd' parameter)
-          const clientKeyWithPrivate = configJson.client?.jwks?.keys?.find((k: any) => k.d);
+          // Check client.private_key first (separate from client.jwks which has public keys only),
+          // then fall back to finding a key with 'd' parameter in client.jwks.keys
+          const clientKeyWithPrivate = configJson.client?.private_key ||
+            configJson.client?.jwks?.keys?.find((k: any) => k.d);
           const clientPrivateKeyJwk = clientKeyWithPrivate ? JSON.stringify(clientKeyWithPrivate) : null;
 
           const issuerResp = await fetch(`${ENV.ADMIN_URL}/admin/tenants/${tenantContext.tenantId}/issuers`, {
@@ -331,51 +333,36 @@ test.describe('OID4VCI Wallet Conformance Suite', () => {
               // Drive the wallet to accept the credential offer
               console.log(`Module ${moduleName}: accepting offer via ${interactionUrl.slice(0, 80)}...`);
 
-              // Navigate to the credential offer URL.
-              // The wallet session (PRF key) is in memory, so we can't do page.goto().
-              // Instead, set window.location.href from within the page, which causes a
-              // navigation but the wallet's UriHandlerProvider will detect the credential_offer
-              // param during the fresh page load. However, since the keystore is in memory,
-              // the user won't be logged in after reload.
-              //
-              // The correct approach for the web wallet is to update the URL without reload:
-              // The wallet's UriHandlerProvider watches `location` from useLocation().
-              // We need to use React Router's navigate function to trigger SPA navigation.
-              console.log(`Module ${moduleName}: injecting credential offer URL into SPA...`);
-              await page.evaluate((offerUrl) => {
-                // Set the URL and trigger a custom event that the wallet can pick up
-                const url = new URL(offerUrl, window.location.origin);
-                // Directly set window.location.search which triggers useLocation
-                window.history.pushState(null, '', url.pathname + url.search);
-                // Manually trigger React Router by dispatching popstate
+              // Extract credential_offer params from the openid-credential-offer:// URL
+              const offerParams = interactionUrl.replace('openid-credential-offer://?', '');
+
+              // SPA navigation: pushState to the current tenant path with credential_offer params.
+              // The UriHandlerProvider watches useLocation() for credential_offer params
+              // and navigates to /cb when detected. This preserves the in-memory keystore.
+              const tenantBasePath = `/id/${tenantContext.tenantId}/`;
+              console.log(`Module ${moduleName}: injecting credential offer via SPA pushState...`);
+              await page.evaluate(({ basePath, params }) => {
+                window.history.pushState(null, '', `${basePath}?${params}`);
                 window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
-              }, interactionUrl);
+              }, { basePath: tenantBasePath, params: offerParams });
 
-              // Wait a moment, then check if the Uri Handler picked it up
-              await page.waitForTimeout(3000);
+              // Wait for the UriHandlerProvider to detect the offer and navigate to /cb
+              let spaNavigationWorked = false;
+              try {
+                await page.waitForURL((url) => url.pathname.includes('/cb'), { timeout: 10000 });
+                spaNavigationWorked = true;
+                console.log(`Module ${moduleName}: SPA navigation to /cb succeeded: ${page.url().slice(0, 100)}`);
+              } catch {
+                console.log(`Module ${moduleName}: SPA navigation to /cb timed out, trying full navigation...`);
+              }
 
-              // If the SPA navigation didn't work, try a full page navigation approach:
-              // The wallet will redirect to /login but preserve the credential_offer param.
-              // We then need to re-authenticate.
-              const currentUrl = page.url();
-              console.log(`Module ${moduleName}: current URL after pushState: ${currentUrl.slice(0, 100)}`);
-
-              // Check if Uri Handler logged anything
-              const uriHandlerFired = await page.evaluate(() => {
-                return document.querySelector('[data-testid="credentials"]') !== null ||
-                       document.querySelector('.toast') !== null;
-              }).catch(() => false);
-
-              if (!uriHandlerFired) {
-                console.log(`Module ${moduleName}: SPA navigation didn't trigger handler. Trying full navigation with re-login...`);
-                // Full page navigation - session will be lost, need to re-login
-                const cbUrl = `${FRONTEND_URL}/id/${tenantContext.tenantId}/cb?` +
-                  interactionUrl.replace('openid-credential-offer://?', '');
+              if (!spaNavigationWorked) {
+                // Fallback: full page navigation (loses keystore, requires re-login)
+                const cbUrl = `${FRONTEND_URL}/id/${tenantContext.tenantId}/cb?${offerParams}`;
                 await page.goto(cbUrl, { waitUntil: 'networkidle', timeout: 30000 });
                 await page.waitForTimeout(2000);
 
-                // The wallet redirects to login preserving the credential_offer param
-                // Re-login with WebAuthn
+                // Re-login with WebAuthn after session loss
                 const loginBtn = page.locator('button:has-text("Log in with a Passkey")');
                 if (await loginBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
                   console.log(`Module ${moduleName}: re-logging in after redirect...`);

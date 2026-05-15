@@ -399,7 +399,12 @@ export class ConformanceAPI {
         return (entry as any).credential_offer_redirect_url;
       }
 
-      // OID4VP: look for authorization request URL
+      // OID4VP: check redirect_to_authorization_endpoint field
+      if ((entry as any).redirect_to_authorization_endpoint) {
+        return (entry as any).redirect_to_authorization_endpoint;
+      }
+
+      // OID4VP: look for authorization request URL in msg
       if (msg.includes('request_uri=') || msg.includes('client_id=')) {
         const match = msg.match(/https?:\/\/[^\s"']+request_uri=[^\s"']+/);
         if (match) return match[0];
