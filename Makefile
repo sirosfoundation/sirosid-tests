@@ -14,6 +14,8 @@
 .PHONY: help install test test-public test-admin test-webauthn \
         test-ci test-soft-fido2 test-vc test-vc-issuance test-vc-verification \
         test-vc-trust test-vc-e2e test-http test-websocket test-wmp test-all-transports \
+        test-conformance test-conformance-vp test-conformance-vci \
+        test-conformance-issuer test-conformance-verifier test-conformance-wallet \
         lint clean
 
 # =============================================================================
@@ -103,6 +105,14 @@ help: ## Show this help
 	@echo "  make test-vc-verification # OpenID4VP verification"
 	@echo "  make test-vc-trust        # VC + go-trust integration"
 	@echo "  make test-vc-e2e          # Full E2E flows"
+	@echo ""
+	@echo "$(GREEN)OpenID Conformance Suite:$(NC)"
+	@echo "  make test-conformance          # All conformance tests"
+	@echo "  make test-conformance-issuer   # OID4VCI issuer conformance"
+	@echo "  make test-conformance-verifier # OID4VP verifier conformance"
+	@echo "  make test-conformance-wallet   # OID4VCI+VP wallet conformance"
+	@echo "  make test-conformance-vci      # OID4VCI wallet only"
+	@echo "  make test-conformance-vp       # OID4VP wallet only"
 	@echo ""
 	@echo "$(GREEN)Environment Configuration:$(NC)"
 	@echo "  FRONTEND_URL = $(FRONTEND_URL)"
@@ -268,6 +278,33 @@ test-conformance-vci: install ## Run OID4VCI wallet conformance tests
 	@echo "  Conformance URL: $(CONFORMANCE_URL)"
 	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
 		$(TEST_ENV) npx playwright test specs/conformance/oid4vci-wallet.spec.ts
+
+# Conformance suite URLs for issuer/verifier (Docker service names)
+ISSUER_CONFORMANCE_URL ?= http://vc-apigw:8080
+VERIFIER_CONFORMANCE_URL ?= http://vc-verifier:8080
+
+test-conformance-issuer: install ## Run OID4VCI issuer conformance tests
+	@echo "$(GREEN)Running OID4VCI issuer conformance tests...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	@echo "  Issuer URL (Docker): $(ISSUER_CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		ISSUER_CONFORMANCE_URL=$(ISSUER_CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/oid4vci-issuer.spec.ts
+
+test-conformance-verifier: install ## Run OID4VP verifier conformance tests
+	@echo "$(GREEN)Running OID4VP verifier conformance tests...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	@echo "  Verifier URL (Docker): $(VERIFIER_CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		VERIFIER_CONFORMANCE_URL=$(VERIFIER_CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/oid4vp-verifier.spec.ts
+
+test-conformance-wallet: install ## Run all wallet conformance tests (VCI + VP)
+	@echo "$(GREEN)Running wallet conformance tests (VCI + VP)...$(NC)"
+	@echo "  Conformance URL: $(CONFORMANCE_URL)"
+	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
+		$(TEST_ENV) npx playwright test specs/conformance/oid4vci-wallet.spec.ts \
+		                              specs/conformance/oid4vp-wallet.spec.ts
 
 check-conformance-env: ## Check conformance suite connectivity
 	@echo "$(GREEN)Checking conformance suite...$(NC)"
