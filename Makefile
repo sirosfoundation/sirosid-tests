@@ -16,6 +16,7 @@
         test-vc-trust test-vc-e2e test-http test-websocket test-wmp test-all-transports \
         test-conformance test-conformance-vp test-conformance-vci \
         test-conformance-issuer test-conformance-verifier test-conformance-wallet \
+        test-wsca test-wsca-softkey test-wsca-r2ps \
         lint clean
 
 # =============================================================================
@@ -113,6 +114,11 @@ help: ## Show this help
 	@echo "  make test-conformance-wallet   # OID4VCI+VP wallet conformance"
 	@echo "  make test-conformance-vci      # OID4VCI wallet only"
 	@echo "  make test-conformance-vp       # OID4VP wallet only"
+	@echo ""
+	@echo "$(GREEN)WSCA Lifecycle (Android):$(NC)"
+	@echo "  make test-wsca                 # All WSCA lifecycle tests (softkey)"
+	@echo "  make test-wsca-softkey         # Softkey plugin lifecycle"
+	@echo "  make test-wsca-r2ps            # R2PS plugin lifecycle (needs R2PS_URL)"
 	@echo ""
 	@echo "$(GREEN)Environment Configuration:$(NC)"
 	@echo "  FRONTEND_URL = $(FRONTEND_URL)"
@@ -305,6 +311,21 @@ test-conformance-wallet: install ## Run all wallet conformance tests (VCI + VP)
 	NODE_TLS_REJECT_UNAUTHORIZED=0 CONFORMANCE_URL=$(CONFORMANCE_URL) \
 		$(TEST_ENV) npx playwright test specs/conformance/oid4vci-wallet.spec.ts \
 		                              specs/conformance/oid4vp-wallet.spec.ts
+
+# ─── WSCA Lifecycle Tests (Android) ──────────────────────────────────────────
+
+R2PS_URL ?=
+
+test-wsca: test-wsca-softkey ## Run WSCA lifecycle tests (softkey)
+
+test-wsca-softkey: install ## Run WSCA lifecycle tests with softkey plugin
+	@echo "$(GREEN)Running WSCA lifecycle tests (softkey)...$(NC)"
+	$(TEST_ENV) npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
+
+test-wsca-r2ps: install ## Run WSCA lifecycle tests with R2PS plugin
+	@echo "$(GREEN)Running WSCA lifecycle tests (r2ps)...$(NC)"
+	@test -n "$(R2PS_URL)" || { echo "$(RED)R2PS_URL is required$(NC)"; exit 1; }
+	R2PS_URL=$(R2PS_URL) $(TEST_ENV) npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
 
 check-conformance-env: ## Check conformance suite connectivity
 	@echo "$(GREEN)Checking conformance suite...$(NC)"
