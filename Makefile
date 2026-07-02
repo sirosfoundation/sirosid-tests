@@ -16,7 +16,7 @@
         test-vc-trust test-vc-e2e test-http test-websocket test-wmp test-all-transports \
         test-conformance test-conformance-vp test-conformance-vci \
         test-conformance-issuer test-conformance-verifier test-conformance-wallet \
-        test-wsca test-wsca-softkey test-wsca-r2ps \
+        test-wsca \
         lint clean
 
 # =============================================================================
@@ -116,9 +116,9 @@ help: ## Show this help
 	@echo "  make test-conformance-vp       # OID4VP wallet only"
 	@echo ""
 	@echo "$(GREEN)WSCA Lifecycle (Android):$(NC)"
-	@echo "  make test-wsca                 # All WSCA lifecycle tests (softkey)"
-	@echo "  make test-wsca-softkey         # Softkey plugin lifecycle"
-	@echo "  make test-wsca-r2ps            # R2PS plugin lifecycle (needs R2PS_URL)"
+	@echo "  make test-wsca                 # WSCA lifecycle tests (env-var driven)"
+	@echo "    R2PS_URL=http://...           include R2PS plugin tests"
+	@echo "    FIDO2_ENABLED=true            include FIDO2/YubiKey plugin tests"
 	@echo ""
 	@echo "$(GREEN)Environment Configuration:$(NC)"
 	@echo "  FRONTEND_URL = $(FRONTEND_URL)"
@@ -315,17 +315,12 @@ test-conformance-wallet: install ## Run all wallet conformance tests (VCI + VP)
 # ─── WSCA Lifecycle Tests (Android) ──────────────────────────────────────────
 
 R2PS_URL ?=
+FIDO2_ENABLED ?=
 
-test-wsca: test-wsca-softkey ## Run WSCA lifecycle tests (softkey)
-
-test-wsca-softkey: install ## Run WSCA lifecycle tests with softkey plugin
-	@echo "$(GREEN)Running WSCA lifecycle tests (softkey)...$(NC)"
-	$(TEST_ENV) npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
-
-test-wsca-r2ps: install ## Run WSCA lifecycle tests with R2PS plugin
-	@echo "$(GREEN)Running WSCA lifecycle tests (r2ps)...$(NC)"
-	@test -n "$(R2PS_URL)" || { echo "$(RED)R2PS_URL is required$(NC)"; exit 1; }
-	R2PS_URL=$(R2PS_URL) $(TEST_ENV) npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
+test-wsca: install ## Run WSCA lifecycle tests (softkey always; set R2PS_URL / FIDO2_ENABLED for more)
+	@echo "$(GREEN)Running WSCA lifecycle tests...$(NC)"
+	$(if $(R2PS_URL),R2PS_URL=$(R2PS_URL)) $(if $(filter true yes 1,$(FIDO2_ENABLED)),FIDO2_ENABLED=true) \
+		$(TEST_ENV) npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
 
 check-conformance-env: ## Check conformance suite connectivity
 	@echo "$(GREEN)Checking conformance suite...$(NC)"
