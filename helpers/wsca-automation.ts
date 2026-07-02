@@ -205,9 +205,13 @@ export function getWscaStatus(): WscaStatus {
 
 /**
  * Configure the WSCA plugin settings.
+ * @param config.plugin_id - Select plugin: 'softkey', 'r2ps', or 'fido2'
+ * @param config.r2ps_enabled - Deprecated: use plugin_id instead
+ * @param config.r2ps_url - R2PS server URL (required when plugin_id is 'r2ps')
  */
-export function configureWsca(config: { r2ps_enabled?: boolean; r2ps_url?: string }): void {
+export function configureWsca(config: { plugin_id?: string; r2ps_enabled?: boolean; r2ps_url?: string }): void {
   const extras: Record<string, string> = {};
+  if (config.plugin_id !== undefined) extras.plugin_id = config.plugin_id;
   if (config.r2ps_enabled !== undefined) extras.r2ps_enabled = String(config.r2ps_enabled);
   if (config.r2ps_url !== undefined) extras.r2ps_url = config.r2ps_url;
   sendWscaIntent('config', extras);
