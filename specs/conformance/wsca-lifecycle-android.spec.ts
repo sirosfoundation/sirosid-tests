@@ -15,6 +15,7 @@
  *   - ANDROID_DEVICE_SERIAL
  *   - ANDROID_WALLET_ACTIVITY
  *   - R2PS_URL (for R2PS plugin tests)
+ *   - FIDO2_ENABLED (set to 'true' to include FIDO2/YubiKey tests)
  *
  * Usage:
  *   npx playwright test specs/conformance/wsca-lifecycle-android.spec.ts
@@ -52,6 +53,7 @@ interface WscaTestConfig {
 }
 
 const R2PS_URL = process.env.R2PS_URL || '';
+const FIDO2_ENABLED = process.env.FIDO2_ENABLED === 'true';
 
 const WSCA_CONFIGS: WscaTestConfig[] = [
   {
@@ -67,6 +69,13 @@ const WSCA_CONFIGS: WscaTestConfig[] = [
     r2psEnabled: true,
     r2psUrl: R2PS_URL,
     skip: !R2PS_URL,
+  },
+  {
+    name: 'fido2',
+    pluginId: 'fido2',
+    factorKind: 'raw_sign',
+    r2psEnabled: false,
+    skip: !FIDO2_ENABLED,
   },
 ];
 
@@ -91,12 +100,13 @@ test.describe('WSCA Lifecycle Conformance (Native Android)', () => {
 
       test.beforeEach(() => {
         if (config.skip) {
-          test.skip(true, `${config.name} requires R2PS_URL`);
+          test.skip(true, `${config.name} requires ${config.name === 'r2ps' ? 'R2PS_URL' : 'FIDO2_ENABLED'}`);
         }
       });
 
       test('configure plugin', () => {
         configureWsca({
+          plugin_id: config.pluginId,
           r2ps_enabled: config.r2psEnabled,
           r2ps_url: config.r2psUrl,
         });
@@ -117,7 +127,7 @@ test.describe('WSCA Lifecycle Conformance (Native Android)', () => {
         const status = getWscaStatus();
         expect(status.state).toBe('Active');
         expect(status.context_id).not.toBe('null');
-        expect(status.plugin).toBe(config.r2psEnabled ? 'r2ps' : 'softkey');
+        expect(status.plugin).toBe(config.pluginId);
       });
 
       test('rotate preserves Active state', () => {
@@ -180,7 +190,7 @@ test.describe('WSCA Full Lifecycle Cycle (softkey)', () => {
   test.beforeAll(() => {
     ensureAndroidWalletReady();
     startAndroidWallet();
-    configureWsca({ r2ps_enabled: false });
+    configureWsca({ plugin_id: 'softkey' });
   });
 
   test('complete lifecycle: enroll → rotate → rotate → destroy', () => {
