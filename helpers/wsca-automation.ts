@@ -166,15 +166,15 @@ export function sendWscaActionAndWait(
  * Enroll the WSCD (register + activate lifecycle).
  * Calls the same enrollWscd() method as the UI button.
  */
-export function enrollWscd(): WscaActionResult {
-  return sendWscaActionAndWait('enroll');
+export function enrollWscd(timeoutMs?: number): WscaActionResult {
+  return sendWscaActionAndWait('enroll', {}, timeoutMs);
 }
 
 /**
  * Rotate lifecycle keys.
  */
-export function rotateLifecycle(): WscaActionResult {
-  return sendWscaActionAndWait('rotate');
+export function rotateLifecycle(timeoutMs?: number): WscaActionResult {
+  return sendWscaActionAndWait('rotate', {}, timeoutMs);
 }
 
 /**
@@ -195,7 +195,8 @@ export function getWscaStatus(): WscaStatus {
   const deadline = Date.now() + DEFAULT_RESULT_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const results = readWscaLogcatResults();
-    const statusResult = results.find((r) => r.action === 'status');
+    // Skip dispatching lines — wait for the actual status payload
+    const statusResult = results.find((r) => r.action === 'status' && r.status !== 'dispatching');
     if (statusResult) return statusResult as unknown as WscaStatus;
     spawnSync('sleep', ['0.5']);
   }
