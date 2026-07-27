@@ -30,6 +30,7 @@ import { loginUserViaUI } from '../../helpers/ui-actions';
 import { ENV } from '../../helpers/shared-helpers';
 import { CREDENTIAL_TYPES } from '../../helpers/vc-services';
 import { WebAuthnHelper } from '../../helpers/webauthn';
+import { emitEvent, emitModuleResult } from '../../helpers/conformance-progress';
 
 // =============================================================================
 // Configuration
@@ -192,6 +193,7 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
 
           console.log(`Created plan ${planId} with ${planModules.length} modules:`);
           planModules.forEach((m) => console.log(`  - ${m}`));
+          emitEvent('plan_created', { planId, modules: planModules, planDetailUrl: api.getPlanDetailUrl(planId) });
         });
 
         test('should have created a test plan', () => {
@@ -258,6 +260,7 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
 
           for (const moduleName of planModules) {
             console.log(`\n=== Running module: ${moduleName} ===`);
+            emitEvent('module_start', { module: moduleName });
 
             // Create and start the test module
             const moduleInfo = await api.createTestFromPlan(planId, moduleName);
@@ -271,12 +274,9 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
               state = await api.waitForState(moduleId, ['WAITING', 'FINISHED'], 60000);
             } catch (error) {
               console.log(`Module ${moduleName} failed to reach WAITING: ${(error as Error).message}`);
-              results.push({
-                module: moduleName,
-                status: 'ERROR',
-                result: 'TIMEOUT',
-                passed: false,
-              });
+              const entry = { module: moduleName, status: 'ERROR', result: 'TIMEOUT', passed: false };
+              results.push(entry);
+              await emitModuleResult(api, moduleId, entry);
               continue;
             }
 
@@ -284,12 +284,14 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
               // Module finished without needing wallet interaction
               const info = await api.getModuleInfo(moduleId);
               console.log(`Module ${moduleName} finished immediately: ${info.result}`);
-              results.push({
+              const entry = {
                 module: moduleName,
                 status: info.status,
                 result: info.result,
                 passed: info.result === 'PASSED',
-              });
+              };
+              results.push(entry);
+              await emitModuleResult(api, moduleId, entry);
               continue;
             }
 
@@ -302,12 +304,9 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
               const browserUrl = await api.getBrowserInteractionUrl(moduleId);
               if (!browserUrl) {
                 console.log(`Module ${moduleName}: no interaction URL found`);
-                results.push({
-                  module: moduleName,
-                  status: 'ERROR',
-                  result: 'NO_URL',
-                  passed: false,
-                });
+                const entry = { module: moduleName, status: 'ERROR', result: 'NO_URL', passed: false };
+                results.push(entry);
+                await emitModuleResult(api, moduleId, entry);
                 continue;
               }
 
@@ -399,12 +398,14 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
             const finalInfo = await api.getModuleInfo(moduleId);
             console.log(`Module ${moduleName} result: ${finalInfo.result}`);
 
-            results.push({
+            const entry = {
               module: moduleName,
               status: finalInfo.status,
               result: finalInfo.result,
               passed: finalInfo.result === 'PASSED',
-            });
+            };
+            results.push(entry);
+            await emitModuleResult(api, moduleId, entry);
 
             // Navigate back to wallet home between modules
             await page.goto(`${FRONTEND_URL}/`, { waitUntil: 'networkidle', timeout: 10000 });
@@ -432,6 +433,12 @@ test.describe('OID4VP Wallet Conformance Suite', () => {
 
           // Plan detail URL for full results
           console.log(`\nFull results: ${api.getPlanDetailUrl(planId)}`);
+          emitEvent('run_summary', {
+            total: results.length,
+            passed: passed.length,
+            failed: failed.length,
+            planDetailUrl: api.getPlanDetailUrl(planId),
+          });
 
           // Assert all modules passed
           expect(failed.length, `${failed.length} modules failed: ${failed.map((r) => r.module).join(', ')}`).toBe(0);

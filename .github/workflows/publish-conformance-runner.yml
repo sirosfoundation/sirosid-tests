@@ -1,0 +1,51 @@
+# Publishes the conformance-runner image, which sirosid-dev deploys (locally
+# via docker-compose.conformance.yml, and on Fly via
+# scripts/fly_common.py's CONFORMANCE_COMPONENTS) to drive this repo's own
+# Playwright conformance specs from a dashboard. Uses the org-shared
+# build/push/scan workflow - see sirosfoundation/.github's
+# docker-build-push.yml for the full contract.
+
+name: Publish conformance-runner image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+    paths:
+      - 'conformance-runner/**'
+      - 'specs/conformance/**'
+      - 'helpers/**'
+      - 'configs/conformance/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'conformance-runner/**'
+      - 'specs/conformance/**'
+      - 'helpers/**'
+      - 'configs/conformance/**'
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Git ref to build (branch, tag, or SHA)'
+        required: false
+        default: 'main'
+      image_tag:
+        description: 'Custom image tag (leave empty for standard policy)'
+        required: false
+        default: ''
+
+jobs:
+  docker:
+    uses: sirosfoundation/.github/.github/workflows/docker-build-push.yml@main
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    with:
+      image-name: sirosfoundation/conformance-runner
+      dockerfile: ./conformance-runner/Dockerfile
+      platforms: linux/amd64
+      custom-ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || '' }}
+      custom-tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}

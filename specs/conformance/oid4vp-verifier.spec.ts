@@ -33,6 +33,7 @@ const __dirname = path.dirname(__filename);
 import { ConformanceAPI, type TestState } from '../../helpers/conformance-api';
 import { ENV } from '../../helpers/shared-helpers';
 import { VC_ENV, checkVCServicesHealth } from '../../helpers/vc-services';
+import { emitEvent, emitModuleResult } from '../../helpers/conformance-progress';
 
 // =============================================================================
 // Configuration
@@ -53,21 +54,28 @@ const VERIFIER_CONFORMANCE_URL =
  */
 const VERIFIER_HOST_URL = VC_ENV.VC_VERIFIER_URL;
 
-/** OID4VP RP test plan variants */
+/** OID4VP RP test plan variants. vp_profile is required - without it, plan
+ * creation fails with "No test modules in plan ... are applicable for
+ * specified variant" (confirmed against the live suite directly). */
 const VP_VERIFIER_VARIANTS = [
   {
-    name: 'sd_jwt_vc / x509_san_dns / direct_post / request_uri_signed',
+    name: 'sd_jwt_vc / x509_san_dns / direct_post / request_uri_signed / plain_vp',
     variant: {
       credential_format: 'sd_jwt_vc',
       client_id_prefix: 'x509_san_dns',
       response_mode: 'direct_post',
       request_method: 'request_uri_signed',
+      vp_profile: 'plain_vp',
     },
   },
 ];
 
-/** Conformance suite test plan name for verifier/RP testing */
-const VP_RP_PLAN_NAME = 'oid4vp-1final-rp-test-plan';
+/** Conformance suite test plan name for verifier/RP testing - confirmed
+ * against the actual VP1FinalVerifierTestPlan.class's @PublishTestPlan
+ * annotation (the suite doesn't have a plan literally named
+ * "...-rp-test-plan" despite the test/RP terminology used throughout this
+ * file - that was a naming assumption, not what the suite actually exposes). */
+const VP_RP_PLAN_NAME = 'oid4vp-1final-verifier-test-plan';
 
 /** Config template path */
 const VP_VERIFIER_CONFIG_PATH = path.resolve(
@@ -206,6 +214,7 @@ test.describe('OID4VP Verifier/RP Conformance Suite', () => {
 
         console.log(`Created plan ${planId} with ${planModules.length} modules:`);
         planModules.forEach((m) => console.log(`  - ${m}`));
+        emitEvent('plan_created', { planId, modules: planModules, planDetailUrl: api.getPlanDetailUrl(planId) });
       });
 
       test('should have created a test plan', () => {
@@ -228,6 +237,7 @@ test.describe('OID4VP Verifier/RP Conformance Suite', () => {
 
         for (const moduleName of planModules) {
           console.log(`\n=== Running verifier module: ${moduleName} ===`);
+          emitEvent('module_start', { module: moduleName });
 
           const moduleInfo = await api.createTestFromPlan(planId, moduleName);
           const moduleId = moduleInfo.id;
@@ -243,24 +253,23 @@ test.describe('OID4VP Verifier/RP Conformance Suite', () => {
             state = await api.waitForState(moduleId, ['WAITING', 'FINISHED'], 120000);
           } catch (error) {
             console.log(`Module ${moduleName} timed out: ${(error as Error).message}`);
-            results.push({
-              module: moduleName,
-              status: 'ERROR',
-              result: 'TIMEOUT',
-              passed: false,
-            });
+            const entry = { module: moduleName, status: 'ERROR', result: 'TIMEOUT', passed: false };
+            results.push(entry);
+            await emitModuleResult(api, moduleId, entry);
             continue;
           }
 
           if (state === 'FINISHED') {
             const info = await api.getModuleInfo(moduleId);
             console.log(`Module ${moduleName} finished: ${info.result}`);
-            results.push({
+            const entry = {
               module: moduleName,
               status: info.status,
               result: info.result,
               passed: info.result === 'PASSED',
-            });
+            };
+            results.push(entry);
+            await emitModuleResult(api, moduleId, entry);
             continue;
           }
 
@@ -327,12 +336,14 @@ test.describe('OID4VP Verifier/RP Conformance Suite', () => {
             }
           }
 
-          results.push({
+          const entry = {
             module: moduleName,
             status: finalInfo.status,
             result: finalInfo.result,
             passed: finalInfo.result === 'PASSED',
-          });
+          };
+          results.push(entry);
+          await emitModuleResult(api, moduleId, entry);
         }
 
         // Report results
@@ -357,6 +368,12 @@ test.describe('OID4VP Verifier/RP Conformance Suite', () => {
         }
 
         console.log(`\nFull results: ${api.getPlanDetailUrl(planId)}`);
+        emitEvent('run_summary', {
+          total: results.length,
+          passed: passed.length,
+          failed: failed.length,
+          planDetailUrl: api.getPlanDetailUrl(planId),
+        });
 
         expect(
           failed.length,

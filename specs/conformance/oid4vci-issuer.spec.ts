@@ -26,6 +26,7 @@ const __dirname = path.dirname(__filename);
 import { ConformanceAPI, type TestState } from '../../helpers/conformance-api';
 import { ENV } from '../../helpers/shared-helpers';
 import { VC_ENV, checkVCServicesHealth } from '../../helpers/vc-services';
+import { emitEvent, emitModuleResult } from '../../helpers/conformance-progress';
 
 // =============================================================================
 // Configuration
@@ -48,16 +49,30 @@ const CONFORMANCE_URL = process.env.CONFORMANCE_URL || 'https://localhost.emobix
 const ISSUER_CONFORMANCE_URL =
   process.env.ISSUER_CONFORMANCE_URL || 'http://vc-apigw:8080';
 
-/** OID4VCI issuer test plan variants */
+/** OID4VCI issuer test plan variants.
+ * "vci_credential_issuance_mode" doesn't apply here - that's a WALLET-plan-only
+ * variant (see oid4vci-wallet.spec.ts) - a leftover copy/paste from there
+ * silently accepted by createTestPlan(), but rejected the moment a module
+ * actually needed a variant it didn't provide, since the ISSUER plan's own
+ * variant set is different. Every key below was confirmed against the live
+ * suite's own `/api/runner/available` variant listing for
+ * oid4vci-1_0-issuer-* modules - all 11 are required (creating a plan with
+ * any missing fails with "requires a value for variant '<name>'"). */
 const VCI_ISSUER_VARIANTS = [
   {
-    name: 'sd_jwt_vc / pre-authorized_code / immediate',
+    name: 'sd_jwt_vc / pre-authorized_code / dpop / private_key_jwt',
     variant: {
       credential_format: 'sd_jwt_vc',
       vci_grant_type: 'pre_authorization_code',
-      vci_credential_issuance_mode: 'immediate',
       sender_constrain: 'dpop',
       fapi_profile: 'vci',
+      client_auth_type: 'private_key_jwt',
+      vci_authorization_code_flow_variant: 'issuer_initiated',
+      authorization_request_type: 'simple',
+      openid: 'plain_oauth',
+      fapi_request_method: 'unsigned',
+      vci_credential_encryption: 'plain',
+      fapi_response_mode: 'plain_response',
     },
   },
 ];
@@ -156,6 +171,7 @@ test.describe('OID4VCI Issuer Conformance Suite', () => {
 
         console.log(`Created plan ${planId} with ${planModules.length} modules:`);
         planModules.forEach((m) => console.log(`  - ${m}`));
+        emitEvent('plan_created', { planId, modules: planModules, planDetailUrl: api.getPlanDetailUrl(planId) });
       });
 
       test('should have created a test plan', () => {
@@ -178,6 +194,7 @@ test.describe('OID4VCI Issuer Conformance Suite', () => {
 
         for (const moduleName of planModules) {
           console.log(`\n=== Running issuer module: ${moduleName} ===`);
+          emitEvent('module_start', { module: moduleName });
 
           const moduleInfo = await api.createTestFromPlan(planId, moduleName);
           const moduleId = moduleInfo.id;
@@ -191,24 +208,23 @@ test.describe('OID4VCI Issuer Conformance Suite', () => {
             state = await api.waitForState(moduleId, ['WAITING', 'FINISHED'], 120000);
           } catch (error) {
             console.log(`Module ${moduleName} timed out: ${(error as Error).message}`);
-            results.push({
-              module: moduleName,
-              status: 'ERROR',
-              result: 'TIMEOUT',
-              passed: false,
-            });
+            const entry = { module: moduleName, status: 'ERROR', result: 'TIMEOUT', passed: false };
+            results.push(entry);
+            await emitModuleResult(api, moduleId, entry);
             continue;
           }
 
           if (state === 'FINISHED') {
             const info = await api.getModuleInfo(moduleId);
             console.log(`Module ${moduleName} finished: ${info.result}`);
-            results.push({
+            const entry = {
               module: moduleName,
               status: info.status,
               result: info.result,
               passed: info.result === 'PASSED',
-            });
+            };
+            results.push(entry);
+            await emitModuleResult(api, moduleId, entry);
             continue;
           }
 
@@ -278,12 +294,14 @@ test.describe('OID4VCI Issuer Conformance Suite', () => {
             }
           }
 
-          results.push({
+          const entry = {
             module: moduleName,
             status: finalInfo.status,
             result: finalInfo.result,
             passed: finalInfo.result === 'PASSED',
-          });
+          };
+          results.push(entry);
+          await emitModuleResult(api, moduleId, entry);
         }
 
         // Report results
@@ -306,6 +324,12 @@ test.describe('OID4VCI Issuer Conformance Suite', () => {
         }
 
         console.log(`\nFull results: ${api.getPlanDetailUrl(planId)}`);
+        emitEvent('run_summary', {
+          total: results.length,
+          passed: passed.length,
+          failed: failed.length,
+          planDetailUrl: api.getPlanDetailUrl(planId),
+        });
 
         expect(
           failed.length,
