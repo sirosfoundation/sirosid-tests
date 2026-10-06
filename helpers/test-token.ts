@@ -1,4 +1,8 @@
 /**
+ * DEPRECATED: mints legacy HS256 tokens, which go-wallet-backend refuses once the
+ * legacy HMAC AS is removed (#436). Nothing in this repo imports it; do not use it
+ * in new specs. Obtain a bearer via getBackendAccessToken() in helpers/auth-endpoints.ts.
+ *
  * Test Token Generator
  *
  * Generates valid JWT tokens for E2E testing.

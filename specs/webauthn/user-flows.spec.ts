@@ -25,6 +25,7 @@
 import { test, expect, request } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { WebAuthnHelper } from '../../helpers/webauthn';
+import { isLoginFinishUrl, isRegisterBeginUrl, isRegisterFinishUrl } from '../../helpers/auth-endpoints';
 
 // Environment URLs
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -125,7 +126,7 @@ async function registerUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('register-webauthn-finish')) {
+    if (isRegisterFinishUrl(url)) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -136,7 +137,7 @@ async function registerUserViaUI(
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('register-webauthn-begin') && !response.ok()) {
+    } else if (isRegisterBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -172,7 +173,7 @@ async function registerUserViaUI(
   
   try {
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('register-webauthn-finish'),
+      (response) => isRegisterFinishUrl(response.url()),
       { timeout: WEBAUTHN_TIMEOUT }
     );
     
@@ -252,7 +253,7 @@ async function loginUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if ((url.includes('login-webauthn-finish') || url.includes('authenticate')) && !response.ok()) {
+    if ((isLoginFinishUrl(url) || url.includes('authenticate')) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `HTTP ${response.status()}`;
@@ -275,7 +276,7 @@ async function loginUserViaUI(
 
   try {
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('login-webauthn-finish') || response.url().includes('authenticate'),
+      (response) => isLoginFinishUrl(response.url()) || response.url().includes('authenticate'),
       { timeout: WEBAUTHN_TIMEOUT }
     );
 

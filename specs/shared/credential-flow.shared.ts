@@ -16,6 +16,7 @@ import {
   deleteTenant,
 } from '../../helpers/shared-helpers';
 import { registerUserViaUI } from './user-flows.shared';
+import { getBackendAccessToken, isLoginFinishUrl } from '../../helpers/auth-endpoints';
 
 // =============================================================================
 // Helper Functions
@@ -258,51 +259,24 @@ export function defineCredentialIdStabilityTests(
       
       expect(registration.success).toBe(true);
       
-      // Get app token - try registration response first, then sessionStorage (where frontend stores it)
+      // Get a bearer token. Session mode: POST /auth/token with the AS session
+      // cookie set by the passkey finish call. Legacy-enabled backends: fall back
+      // to the appToken from the finish response, if one was returned.
       await waitForWalletReady(page);
-      let appToken = registration.appToken;
-      if (!appToken) {
-        // Frontend stores appToken in sessionStorage as JSON (via jsonStringifyTaggedBinary)
-        const storedToken = await page.evaluate(() => {
-          const raw = sessionStorage.getItem('appToken');
-          if (raw) {
-            try {
-              return JSON.parse(raw);
-            } catch {
-              return raw;
-            }
-          }
-          return null;
-        });
-        if (storedToken) {
-          appToken = storedToken;
-        }
-      }
-      
-      if (!appToken) {
-        console.log(`[${info.name}] App token not available after registration - checking if session is authenticated`);
-        // Alternative: check if we can access account-info via cookies
-        const cookieAuth = await page.evaluate(async () => {
-          try {
-            const resp = await fetch('/user/session/account-info', { credentials: 'include' });
-            return resp.ok;
-          } catch { return false; }
-        });
-        if (!cookieAuth) {
-          console.log(`[${info.name}] No auth mechanism available - skipping credential rename test`);
-          test.skip();
-          return;
-        }
-        console.log(`[${info.name}] Using cookie-based auth`);
-      } else {
-        console.log(`[${info.name}] Got app token: ${appToken.substring(0, 20)}...`);
-      }
+      const appToken = await getBackendAccessToken(page, {
+        tenantId: registration.tenantId,
+        legacyAppToken: registration.appToken,
+      });
+      // A successful registration must always yield a usable token: failing here
+      // (instead of skipping) keeps this test from silently losing coverage.
+      expect(appToken, 'no bearer token from /auth/token (session mode) or finish response (legacy)').toBeTruthy();
+      console.log(`[${info.name}] Got access token: ${appToken!.substring(0, 20)}...`);
 
       // Get account info to retrieve credential IDs
       const apiContext = await request.newContext({
-        extraHTTPHeaders: appToken ? {
+        extraHTTPHeaders: {
           Authorization: `Bearer ${appToken}`,
-        } : {},
+        },
       });
 
       const accountInfoResponse = await apiContext.get(`${ENV.BACKEND_URL}/user/session/account-info`);
@@ -359,29 +333,14 @@ export function defineCredentialIdStabilityTests(
       
       expect(registration.success).toBe(true);
       
-      // Get app token - try registration response first, then sessionStorage
+      // Get a bearer token (session mode /auth/token, legacy appToken fallback)
       await waitForWalletReady(page);
-      let appToken = registration.appToken;
-      if (!appToken) {
-        // Frontend stores appToken in sessionStorage as JSON
-        const storedToken = await page.evaluate(() => {
-          const raw = sessionStorage.getItem('appToken');
-          if (raw) {
-            try { return JSON.parse(raw); } catch { return raw; }
-          }
-          return null;
-        });
-        if (storedToken) {
-          appToken = storedToken;
-        }
-      }
-      
-      if (!appToken) {
-        console.log(`[${info.name}] App token not available - skipping ID matching test`);
-        test.skip();
-        return;
-      }
-      console.log(`[${info.name}] Got app token: ${appToken.substring(0, 20)}...`);
+      const appToken = await getBackendAccessToken(page, {
+        tenantId: registration.tenantId,
+        legacyAppToken: registration.appToken,
+      });
+      expect(appToken, 'no bearer token from /auth/token (session mode) or finish response (legacy)').toBeTruthy();
+      console.log(`[${info.name}] Got access token: ${appToken!.substring(0, 20)}...`);
 
       // Get credential ID from account-info
       const apiContext = await request.newContext({
@@ -417,7 +376,7 @@ export function defineCredentialIdStabilityTests(
       if (await cachedUserButton.isVisible({ timeout: 5000 }).catch(() => false)) {
         // Start listening for login response
         const loginPromise = page.waitForResponse(
-          (resp) => resp.url().includes('login-webauthn-finish'),
+          (resp) => isLoginFinishUrl(resp.url()),
           { timeout: 15000 }
         ).catch(() => null);
         

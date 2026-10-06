@@ -23,6 +23,7 @@ import {
   getTransportDescription,
   clearStatusCache,
 } from '../../helpers/backend-capabilities';
+import { SESSION_MODE_HEADERS } from '../../helpers/auth-endpoints';
 
 // =============================================================================
 // Test Definitions
@@ -79,11 +80,13 @@ export function defineTenantApiTests(
     test('should return 404 for registration with non-existent tenant', async ({ request: reqContext }) => {
       const info = adapterInfo();
       
-      // Test backend error handling for non-existent tenant
+      // Test backend error handling for non-existent tenant. Uses the session-mode
+      // AS endpoint: the legacy /user/register-webauthn-begin answers 410 once the
+      // legacy HMAC AS is removed (go-wallet-backend #436).
       const response = await reqContext.post(
-        `${ENV.BACKEND_URL}/user/register-webauthn-begin`,
+        `${ENV.BACKEND_URL}/auth/passkey/register/begin`,
         {
-          headers: { 'X-Tenant-ID': 'this-tenant-does-not-exist' },
+          headers: { ...SESSION_MODE_HEADERS, 'X-Tenant-ID': 'this-tenant-does-not-exist' },
           data: {},
         }
       );

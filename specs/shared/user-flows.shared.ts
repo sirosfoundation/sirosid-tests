@@ -29,6 +29,7 @@ import {
   type RegisterOptions,
   type LoginOptions,
 } from '../../helpers/shared-helpers';
+import { isLoginFinishUrl } from '../../helpers/auth-endpoints';
 
 // =============================================================================
 // High-Level UI Helpers (using shared primitives)
@@ -267,7 +268,7 @@ export function defineUserRegistrationTests(
       
       // Start listening for login finish
       const responsePromise = page.waitForResponse(
-        (resp) => resp.url().includes('login-webauthn-finish'),
+        (resp) => isLoginFinishUrl(resp.url()),
         { timeout: 20000 }
       ).catch(() => null);
       
@@ -541,7 +542,7 @@ export function defineDefaultTenantFlowTests(
         console.log(`[${info.name}] Found cached user, attempting login`);
         
         const loginPromise = page.waitForResponse(
-          (resp) => resp.url().includes('login-webauthn-finish'),
+          (resp) => isLoginFinishUrl(resp.url()),
           { timeout: 20000 }
         ).catch(() => null);
         
@@ -631,7 +632,7 @@ export function defineCustomTenantFlowTests(
         console.log(`[${info.name}] Found cached user, attempting login`);
         
         const loginPromise = page.waitForResponse(
-          (resp) => resp.url().includes('login-webauthn-finish'),
+          (resp) => isLoginFinishUrl(resp.url()),
           { timeout: 20000 }
         ).catch(() => null);
         

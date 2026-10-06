@@ -23,6 +23,7 @@ export interface TenantContext {
   tenantId: string;
   username: string;
   userId?: string;
+  /** Legacy-only: undefined in session mode. Use getBackendAccessToken() (helpers/auth-endpoints) to obtain a bearer. */
   appToken?: string;
   ready: boolean;
   error?: string;

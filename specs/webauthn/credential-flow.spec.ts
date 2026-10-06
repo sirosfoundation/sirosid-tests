@@ -23,6 +23,7 @@ import {
   clearStatusCache,
 } from '../../helpers/backend-capabilities';
 import { CdpWebAuthnAdapter } from '../../helpers/webauthn-adapter';
+import { isLoginBeginUrl, isLoginFinishUrl, isRegisterBeginUrl, isRegisterFinishUrl } from '../../helpers/auth-endpoints';
 
 // Environment URLs
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -72,7 +73,7 @@ async function registerUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('register-webauthn-finish')) {
+    if (isRegisterFinishUrl(url)) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -83,7 +84,7 @@ async function registerUserViaUI(
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('register-webauthn-begin') && !response.ok()) {
+    } else if (isRegisterBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -126,7 +127,7 @@ async function registerUserViaUI(
   try {
     // Start waiting for the finish response before clicking
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('register-webauthn-finish'),
+      (response) => isRegisterFinishUrl(response.url()),
       { timeout: WEBAUTHN_TIMEOUT * 2 } // Allow time for PRF retry
     );
     
@@ -217,14 +218,14 @@ async function loginUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('login-webauthn-finish')) {
+    if (isLoginFinishUrl(url)) {
       finishStatus = response.status();
       try {
         finishResponse = await response.json();
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('login-webauthn-begin') && !response.ok()) {
+    } else if (isLoginBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -269,7 +270,7 @@ async function loginUserViaUI(
   
   try {
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('login-webauthn-finish'),
+      (response) => isLoginFinishUrl(response.url()),
       { timeout: WEBAUTHN_TIMEOUT }
     );
     
@@ -627,7 +628,7 @@ credTest.describe('Full Credential Flow', () => {
       console.log('Cached user found, testing login...');
       await cachedUserButton.click();
       await page.waitForResponse(
-        (response) => response.url().includes('login-webauthn-finish'),
+        (response) => isLoginFinishUrl(response.url()),
         { timeout: 15000 }
       );
       await waitForWalletReady(page);

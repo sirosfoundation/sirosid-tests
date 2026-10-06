@@ -9,6 +9,7 @@
 
 import { expect, request } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
+import { isLoginBeginUrl, isLoginFinishUrl, isRegisterBeginUrl, isRegisterFinishUrl } from './auth-endpoints';
 
 // Environment URLs - configurable via environment variables
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -69,6 +70,7 @@ export interface RegisterResult {
   success: boolean;
   userId?: string;
   tenantId?: string;
+  /** Legacy-only: undefined in session mode. Use getBackendAccessToken() (helpers/auth-endpoints) to obtain a bearer. */
   appToken?: string;
   error?: string;
 }
@@ -125,7 +127,7 @@ export async function registerUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('register-webauthn-finish')) {
+    if (isRegisterFinishUrl(url)) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -136,7 +138,7 @@ export async function registerUserViaUI(
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('register-webauthn-begin') && !response.ok()) {
+    } else if (isRegisterBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -176,7 +178,7 @@ export async function registerUserViaUI(
   try {
     // Start waiting for the finish response before clicking
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('register-webauthn-finish'),
+      (response) => isRegisterFinishUrl(response.url()),
       { timeout: WEBAUTHN_TIMEOUT * 2 } // Allow time for PRF retry
     );
 
@@ -297,14 +299,14 @@ export async function loginUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('login-webauthn-finish')) {
+    if (isLoginFinishUrl(url)) {
       finishStatus = response.status();
       try {
         finishResponse = await response.json();
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('login-webauthn-begin') && !response.ok()) {
+    } else if (isLoginBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -343,7 +345,7 @@ export async function loginUserViaUI(
 
   try {
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('login-webauthn-finish'),
+      (response) => isLoginFinishUrl(response.url()),
       { timeout: WEBAUTHN_TIMEOUT }
     );
 
