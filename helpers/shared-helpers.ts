@@ -220,7 +220,8 @@ export async function waitForRegistrationFinish(
   let finishResponse: any = null;
   let apiError: string | null = null;
 
-  const responseHandler = async (response: any) => {
+  const pending: Promise<void>[] = [];
+  const handle = async (response: any) => {
     const url = response.url();
     if (isRegisterFinishUrl(url)) {
       try {
@@ -243,6 +244,9 @@ export async function waitForRegistrationFinish(
     }
   };
 
+  const responseHandler = (response: any) => {
+    pending.push(handle(response));
+  };
   page.on('response', responseHandler);
 
   try {
@@ -255,6 +259,9 @@ export async function waitForRegistrationFinish(
   }
 
   page.off('response', responseHandler);
+  // The matched response's body may still be parsing; wait for it so the
+  // caller never sees a null response for a successful finish.
+  await Promise.allSettled(pending);
 
   return { response: finishResponse, error: apiError };
 }
@@ -269,7 +276,8 @@ export async function waitForLoginFinish(
   let finishResponse: any = null;
   let apiError: string | null = null;
 
-  const responseHandler = async (response: any) => {
+  const pending: Promise<void>[] = [];
+  const handle = async (response: any) => {
     const url = response.url();
     if (isLoginFinishUrl(url) || url.includes('authenticate')) {
       try {
@@ -285,6 +293,9 @@ export async function waitForLoginFinish(
     }
   };
 
+  const responseHandler = (response: any) => {
+    pending.push(handle(response));
+  };
   page.on('response', responseHandler);
 
   try {
@@ -299,6 +310,9 @@ export async function waitForLoginFinish(
   }
 
   page.off('response', responseHandler);
+  // The matched response's body may still be parsing; wait for it so the
+  // caller never sees a null response for a successful finish.
+  await Promise.allSettled(pending);
 
   return { response: finishResponse, error: apiError };
 }

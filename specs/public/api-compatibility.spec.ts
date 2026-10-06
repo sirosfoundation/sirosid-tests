@@ -399,7 +399,12 @@ test.describe('Tagged Binary Format Compatibility @api', () => {
       });
     }
 
-    for (const path of [SESSION.registerBegin, SESSION.loginBegin]) {
+    for (const path of [
+      SESSION.registerBegin,
+      SESSION.registerFinish,
+      SESSION.loginBegin,
+      SESSION.loginFinish,
+    ]) {
       test(`${path} without X-Token-Mode: session answers 410 legacy_tokens_disabled`, async () => {
         const response = await request.post(path, { data: {} });
         expect(response.status()).toBe(410);
