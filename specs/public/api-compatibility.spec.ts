@@ -197,10 +197,29 @@ function expectTaggedLoginOptions(data: any) {
 }
 
 /** A failed finish must be a clean client error: no 5xx, no token material, no session cookie. */
-async function expectCleanFinishRejection(resp: import('@playwright/test').APIResponse) {
+async function expectCleanFinishRejection(
+  resp: import('@playwright/test').APIResponse,
+  opts: { notFoundIsRouteMissing?: boolean } = {},
+) {
   expect(resp.status()).toBeGreaterThanOrEqual(400);
   expect(resp.status()).toBeLessThan(500);
   const text = await resp.text();
+  // The rejection must come from credential validation, not from a disabled
+  // route, a missing route or a request that failed JSON binding (a broken
+  // session-mode selector or tagged-binary format would show up as one of
+  // these). A login finish legitimately answers 404 for an unknown credential,
+  // so 404 is only rejected where it can only mean "no such route".
+  let error: unknown;
+  try {
+    error = JSON.parse(text)?.error;
+  } catch {
+    // non-JSON body: no error code to check
+  }
+  expect(error).not.toBe('legacy_tokens_disabled');
+  expect(error).not.toBe('invalid request');
+  if (opts.notFoundIsRouteMissing) {
+    expect(resp.status()).not.toBe(404);
+  }
   expect(text).not.toMatch(/appToken|refreshToken|access_token/);
   expect(resp.headers()['set-cookie'] ?? '').toBe('');
 }
@@ -269,7 +288,7 @@ test.describe('Tagged Binary Format Compatibility @api', () => {
       // Invalid attestation: expect a client error, NOT a 5xx (parsing error)
       // and never a session / token.
       console.log('session register/finish status:', finishResp.status());
-      await expectCleanFinishRejection(finishResp);
+      await expectCleanFinishRejection(finishResp, { notFoundIsRouteMissing: true });
     });
 
     test('login/finish accepts tagged binary credential (and rejects the unknown credential cleanly)', async () => {
