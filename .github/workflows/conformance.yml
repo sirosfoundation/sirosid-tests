@@ -53,8 +53,8 @@ env:
   VC_APIGW_URL: http://localhost:9003
   VC_REGISTRY_URL: http://localhost:9004
   CONFORMANCE_URL: https://localhost.emobix.co.uk:8443/
-  ISSUER_CONFORMANCE_URL: http://vc-apigw:8080
-  VERIFIER_CONFORMANCE_URL: http://vc-verifier:8080
+  ISSUER_CONFORMANCE_URL: https://vc-proxy:8443
+  VERIFIER_CONFORMANCE_URL: https://vc-proxy:8444
   GO_TRUST_ALLOW_URL: http://localhost:9095
   NODE_TLS_REJECT_UNAUTHORIZED: '0'
 
@@ -76,7 +76,7 @@ jobs:
   conformance:
     needs: determine-profiles
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -94,40 +94,44 @@ jobs:
         with:
           repository: sirosfoundation/sirosid-dev
           path: sirosid-dev
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       - name: Checkout go-trust
         uses: actions/checkout@v4
         with:
           repository: sirosfoundation/go-trust
           path: go-trust
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
-      # --- Issuer/verifier profiles ---
+      # sirosid-dev's `make up` builds the whole stack from sibling checkouts
+      # (../vc, ../wallet-frontend, ../go-wallet-backend, ../go-trust), so every
+      # profile needs all of them. Refs mirror sirosid-dev's `make setup`
+      # (SETUP_REPOS): wallet-frontend release/sirosid, the rest main.
       - name: Checkout vc
-        if: matrix.profile == 'issuer' || matrix.profile == 'verifier'
         uses: actions/checkout@v4
         with:
           repository: SUNET/vc
+          # Pinned to the last commit before dockerfiles/worker moved to a
+          # distroless runtime (7bb17e8c, 2026-09-16). sirosid-dev's
+          # docker-compose.vc-services.yml healthchecks run `curl` inside the
+          # vc containers, which the distroless image does not have, so
+          # `make up VC=yes` never gets healthy against current vc main.
+          # Drop this pin once sirosid-dev's healthchecks stop needing curl:
+          # https://github.com/sirosfoundation/sirosid-dev/issues/58
+          ref: 77cc620091ae36ff6b53ef13ad855c2ad17e202b
           path: vc
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
-      # --- Wallet profile ---
       - name: Checkout wallet-frontend
-        if: matrix.profile == 'wallet'
         uses: actions/checkout@v4
         with:
-          repository: wwWallet/wallet-frontend
+          repository: sirosfoundation/wallet-frontend
+          ref: release/sirosid
           path: wallet-frontend
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       - name: Checkout go-wallet-backend
-        if: matrix.profile == 'wallet'
         uses: actions/checkout@v4
         with:
           repository: sirosfoundation/go-wallet-backend
+          ref: main
           path: go-wallet-backend
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       # --- System setup ---
       - name: Add conformance hostname to /etc/hosts
@@ -144,58 +148,20 @@ jobs:
       - name: Create Docker network
         run: docker network create e2e-test-network || true
 
-      # --- Start services: issuer ---
-      - name: 'Start services: issuer'
-        if: matrix.profile == 'issuer'
-        working-directory: sirosid-dev
-        env:
-          VC_PATH: ../vc
-          GO_TRUST_PATH: ../go-trust
-        run: |
-          docker compose \
-            -f docker-compose.vc-services.yml \
-            -f docker-compose.vc-go-trust.yml \
-            -f docker-compose.conformance-only.yml \
-            up -d --build \
-            mongodb vc-registry vc-issuer vc-apigw vc-mockas \
-            go-trust-allow \
-            conformance-suite-server conformance-suite-nginx conformance-suite-mongodb
-
-      # --- Start services: verifier ---
-      - name: 'Start services: verifier'
-        if: matrix.profile == 'verifier'
-        working-directory: sirosid-dev
-        env:
-          VC_PATH: ../vc
-          GO_TRUST_PATH: ../go-trust
-        run: |
-          docker compose \
-            -f docker-compose.vc-services.yml \
-            -f docker-compose.vc-go-trust.yml \
-            -f docker-compose.conformance-only.yml \
-            up -d --build \
-            mongodb vc-registry vc-verifier \
-            go-trust-allow \
-            conformance-suite-server conformance-suite-nginx conformance-suite-mongodb
-
-      # --- Start services: wallet ---
-      - name: 'Start services: wallet'
-        if: matrix.profile == 'wallet'
+      # --- Start services ---
+      # Current sirosid-dev layout: one `make up` renders the vc/wallet config
+      # from the chart, generates the PKI and brings up the stack plus the
+      # conformance suite (docker-compose.conformance.yml, with vc-proxy as the
+      # https identity the suite drives the vc services through). helm is
+      # preinstalled on ubuntu-latest.
+      - name: 'Start services'
         working-directory: sirosid-dev
         env:
           FRONTEND_PATH: ../wallet-frontend
           BACKEND_PATH: ../go-wallet-backend
           GO_TRUST_PATH: ../go-trust
-        run: |
-          docker compose \
-            -f docker-compose.test.yml \
-            -f docker-compose.go-trust.yml \
-            -f docker-compose.go-trust-allow.yml \
-            -f docker-compose.conformance.yml \
-            up -d --build \
-            wallet-frontend wallet-backend \
-            go-trust-allow \
-            conformance-suite-server conformance-suite-nginx conformance-suite-mongodb
+          VC_PATH: ../vc
+        run: make up PDP=allow VC=yes CONFORMANCE=yes
 
       # --- Wait for services ---
       - name: Wait for conformance suite
@@ -285,9 +251,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p logs
-          for svc in wallet-backend wallet-frontend go-trust-allow \
-                     vc-issuer vc-verifier vc-apigw vc-mockas vc-registry \
-                     conformance-suite-server; do
+          for svc in $(docker ps -a --format '{{.Names}}'); do
             docker logs "$svc" > "logs/${svc}.log" 2>&1 || true
           done
 

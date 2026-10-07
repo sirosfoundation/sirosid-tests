@@ -26,6 +26,7 @@
 
 import { test, expect, request } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
+import { isRegisterFinishUrl } from '../../helpers/auth-endpoints';
 
 // Environment URLs
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -141,7 +142,7 @@ async function registerUserViaUI(
 
   page.on('response', async (response) => {
     const url = response.url();
-    if (url.includes('register-webauthn-finish')) {
+    if (isRegisterFinishUrl(url)) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -173,7 +174,7 @@ async function registerUserViaUI(
 
   try {
     const responsePromise = page.waitForResponse(
-      (response) => response.url().includes('register-webauthn-finish'),
+      (response) => isRegisterFinishUrl(response.url()),
       { timeout: 30000 }
     );
 

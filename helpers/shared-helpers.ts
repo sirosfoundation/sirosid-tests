@@ -8,6 +8,7 @@
 
 import { expect, request } from '@playwright/test';
 import type { Page, APIRequestContext } from '@playwright/test';
+import { isLoginFinishUrl, isRegisterBeginUrl, isRegisterFinishUrl } from './auth-endpoints';
 
 // =============================================================================
 // Environment Configuration
@@ -103,6 +104,7 @@ export interface RegistrationResult {
   success: boolean;
   userId?: string;
   tenantId?: string;
+  /** Legacy-only: undefined in session mode. Use getBackendAccessToken() (helpers/auth-endpoints) to obtain a bearer. */
   appToken?: string;
   error?: string;
 }
@@ -218,9 +220,10 @@ export async function waitForRegistrationFinish(
   let finishResponse: any = null;
   let apiError: string | null = null;
 
-  const responseHandler = async (response: any) => {
+  const pending: Promise<void>[] = [];
+  const handle = async (response: any) => {
     const url = response.url();
-    if (url.includes('register-webauthn-finish')) {
+    if (isRegisterFinishUrl(url)) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -231,7 +234,7 @@ export async function waitForRegistrationFinish(
       } catch {
         // Ignore JSON parse errors
       }
-    } else if (url.includes('register-webauthn-begin') && !response.ok()) {
+    } else if (isRegisterBeginUrl(url) && !response.ok()) {
       try {
         const data = await response.json();
         apiError = data.error || `Begin failed: HTTP ${response.status()}`;
@@ -241,11 +244,14 @@ export async function waitForRegistrationFinish(
     }
   };
 
+  const responseHandler = (response: any) => {
+    pending.push(handle(response));
+  };
   page.on('response', responseHandler);
 
   try {
     await page.waitForResponse(
-      (response) => response.url().includes('register-webauthn-finish'),
+      (response) => isRegisterFinishUrl(response.url()),
       { timeout }
     );
   } catch {
@@ -253,6 +259,9 @@ export async function waitForRegistrationFinish(
   }
 
   page.off('response', responseHandler);
+  // The matched response's body may still be parsing; wait for it so the
+  // caller never sees a null response for a successful finish.
+  await Promise.allSettled(pending);
 
   return { response: finishResponse, error: apiError };
 }
@@ -267,9 +276,10 @@ export async function waitForLoginFinish(
   let finishResponse: any = null;
   let apiError: string | null = null;
 
-  const responseHandler = async (response: any) => {
+  const pending: Promise<void>[] = [];
+  const handle = async (response: any) => {
     const url = response.url();
-    if (url.includes('login-webauthn-finish') || url.includes('authenticate')) {
+    if (isLoginFinishUrl(url) || url.includes('authenticate')) {
       try {
         const data = await response.json();
         if (response.status() === 200) {
@@ -283,12 +293,15 @@ export async function waitForLoginFinish(
     }
   };
 
+  const responseHandler = (response: any) => {
+    pending.push(handle(response));
+  };
   page.on('response', responseHandler);
 
   try {
     await page.waitForResponse(
       (response) => 
-        response.url().includes('login-webauthn-finish') || 
+        isLoginFinishUrl(response.url()) || 
         response.url().includes('authenticate'),
       { timeout }
     );
@@ -297,6 +310,9 @@ export async function waitForLoginFinish(
   }
 
   page.off('response', responseHandler);
+  // The matched response's body may still be parsing; wait for it so the
+  // caller never sees a null response for a successful finish.
+  await Promise.allSettled(pending);
 
   return { response: finishResponse, error: apiError };
 }

@@ -127,6 +127,21 @@ Full browser-based tests with virtual authenticators:
 - `tenant-selector.spec.ts` - Multi-tenant routing
 - `trust-integration.spec.ts` - Trust evaluation in credential flows
 
+#### Authentication endpoints (session mode vs. legacy HMAC)
+
+The harness authenticates the way wallet-frontend does: `/auth/passkey/{register,login}/{begin,finish}`
+with `X-Token-Mode: session` (session cookie), and a bearer from `POST /auth/token`
+(see `helpers/auth-endpoints.ts`). Helpers that wait on the finish calls match both the
+session-mode URLs and the legacy `/user/*-webauthn-*` URLs, so the suite still runs against
+backends where the legacy HMAC AS is enabled.
+
+`specs/public/api-compatibility.spec.ts` auto-detects whether the backend still serves the
+legacy endpoints (HTTP 410 `legacy_tokens_disabled` = removed) and asserts the matching
+contract. Set `LEGACY_AUTH=enabled|disabled` to force the expectation (the run then fails on
+a mismatch instead of silently testing the other branch). Bearers requested by the harness use
+`BACKEND_TOKEN_TAC` (default `rwl`; a passkey session is capped at the backend's
+`as.default_max_tac`).
+
 ### VC Services Tests (Production-like)
 
 Tests against the full VC stack (issuer, verifier, apigw, registry):
