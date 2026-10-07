@@ -219,6 +219,10 @@ async function expectCleanFinishRejection(
   expect(error).not.toBe('invalid request');
   if (opts.notFoundIsRouteMissing) {
     expect(resp.status()).not.toBe(404);
+  } else if (resp.status() === 404) {
+    // A 404 is only valid as the handler's own unknown-credential/user error,
+    // never as a bare routing "404 page not found".
+    expect(String(error ?? '')).toMatch(/(credential|user) not found/i);
   }
   expect(text).not.toMatch(/appToken|refreshToken|access_token/);
   expect(resp.headers()['set-cookie'] ?? '').toBe('');
