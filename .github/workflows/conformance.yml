@@ -114,7 +114,8 @@ jobs:
           # docker-compose.vc-services.yml healthchecks run `curl` inside the
           # vc containers, which the distroless image does not have, so
           # `make up VC=yes` never gets healthy against current vc main.
-          # Drop this pin once sirosid-dev's healthchecks stop needing curl.
+          # Drop this pin once sirosid-dev's healthchecks stop needing curl:
+          # https://github.com/sirosfoundation/sirosid-dev/issues/58
           ref: 77cc620091ae36ff6b53ef13ad855c2ad17e202b
           path: vc
 
