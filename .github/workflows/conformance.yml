@@ -109,7 +109,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SUNET/vc
-          ref: main
+          # Pinned to the last commit before dockerfiles/worker moved to a
+          # distroless runtime (7bb17e8c, 2026-09-16). sirosid-dev's
+          # docker-compose.vc-services.yml healthchecks run `curl` inside the
+          # vc containers, which the distroless image does not have, so
+          # `make up VC=yes` never gets healthy against current vc main.
+          # Drop this pin once sirosid-dev's healthchecks stop needing curl.
+          ref: 77cc620091ae36ff6b53ef13ad855c2ad17e202b
           path: vc
 
       - name: Checkout wallet-frontend
@@ -244,9 +250,7 @@ jobs:
         if: failure()
         run: |
           mkdir -p logs
-          for svc in wallet-backend wallet-frontend go-trust-allow \
-                     vc-issuer vc-verifier vc-apigw vc-mockas vc-registry \
-                     conformance-suite-server; do
+          for svc in $(docker ps -a --format '{{.Names}}'); do
             docker logs "$svc" > "logs/${svc}.log" 2>&1 || true
           done
 
