@@ -94,14 +94,12 @@ jobs:
         with:
           repository: sirosfoundation/sirosid-dev
           path: sirosid-dev
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       - name: Checkout go-trust
         uses: actions/checkout@v4
         with:
           repository: sirosfoundation/go-trust
           path: go-trust
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       # --- Issuer/verifier profiles ---
       - name: Checkout vc
@@ -110,7 +108,6 @@ jobs:
         with:
           repository: SUNET/vc
           path: vc
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       # --- Wallet profile ---
       - name: Checkout wallet-frontend
@@ -119,7 +116,6 @@ jobs:
         with:
           repository: wwWallet/wallet-frontend
           path: wallet-frontend
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       - name: Checkout go-wallet-backend
         if: matrix.profile == 'wallet'
@@ -127,7 +123,6 @@ jobs:
         with:
           repository: sirosfoundation/go-wallet-backend
           path: go-wallet-backend
-          token: ${{ secrets.REPO_ACCESS_TOKEN }}
 
       # --- System setup ---
       - name: Add conformance hostname to /etc/hosts
