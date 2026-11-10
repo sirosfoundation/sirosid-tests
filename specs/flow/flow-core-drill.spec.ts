@@ -43,6 +43,15 @@ import { WebAuthnHelper } from '../../helpers/webauthn';
 
 const FLOW_CORE_URL =
   process.env.FLOW_CORE_URL || 'https://sirosid-gdc-flow-core.fly.dev';
+// The drill's flow: the PLAIN-mode twin — the current gdc wallet pair
+// completes OID4VP's unencrypted direct_post today (its engine posts
+// the clear form; the .jwt mode waits on the frontend's
+// response-encryption branch), so the plain twin is the vehicle that
+// takes the drill through the last hop: the live PDP permit + the
+// EHIC offer. Switch back to ehic-pid-presentation when the wallet
+// pair answers the encrypted modes.
+const FLOW_NAME =
+  process.env.DRILL_FLOW || 'ehic-pid-presentation-plain';
 const VC_APIGW_URL =
   process.env.VC_APIGW_URL || 'https://sirosid-gdc-vc-apigw.fly.dev';
 
@@ -175,7 +184,7 @@ test.describe('The flow-core wallet drill (gdc)', () => {
     // ── Start the flow: the reply carries the request-by-reference
     //    shapes (request_uri + the openid4vp:// deep link).
     const startResponse = await fetch(
-      `${FLOW_CORE_URL}/flows/ehic-pid-presentation/start`,
+      `${FLOW_CORE_URL}/flows/${FLOW_NAME}/start`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
